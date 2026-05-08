@@ -14,8 +14,8 @@ def get_chapter_4_prompt(brief: dict, previous_chapters: dict) -> str:
     print(f"[chapter_4] Building prompt for: {brief.get('topic', '')[:60]}")
 
     topic          = brief.get("topic", "")
-    research_type  = brief.get("research_type", "quantitative")
-    department     = brief.get("department", "")
+    research_type = brief.get("research_type", "quantitative") or "quantitative"
+    department = brief.get("department", "") or ""
     university     = brief.get("university", "")
     citation_style = brief.get("citation_style", "apa7")
     objectives     = brief.get("objectives", [])

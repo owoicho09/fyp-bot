@@ -12,8 +12,8 @@ def get_chapter_3_prompt(brief: dict) -> str:
     topic          = brief.get("topic", "")
     population     = brief.get("population", "")
     time_frame     = brief.get("time_frame", "")
-    research_type  = brief.get("research_type", "quantitative")
-    department     = brief.get("department", "")
+    research_type = brief.get("research_type", "quantitative") or "quantitative"
+    department = brief.get("department", "") or ""
     university     = brief.get("university", "")
     citation_style = brief.get("citation_style", "apa7")
     objectives     = brief.get("objectives", [])
@@ -121,7 +121,8 @@ Write the full chapter now. Do not summarise or truncate any section."""
 
 def _get_design_instructions(research_type: str, department: str) -> str:
     """Additional instructions based on research design and department."""
-    dept_lower = department.lower()
+    research_type = (research_type or "quantitative").lower()
+    dept_lower = (department or "").lower()
 
     if research_type == "qualitative":
         return """QUALITATIVE DESIGN SPECIFIC INSTRUCTIONS:

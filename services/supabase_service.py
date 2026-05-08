@@ -121,10 +121,6 @@ def get_active_project(telegram_id: int) -> dict | None:
 
 
 def create_project(telegram_id: int, brief: dict) -> dict:
-    """
-    Create a new project from the fully assembled intake brief.
-    Abandons any existing in-progress project for this user first.
-    """
     print(f"[supabase] create_project: {telegram_id}")
     existing = get_active_project(telegram_id)
     if existing:
@@ -133,30 +129,38 @@ def create_project(telegram_id: int, brief: dict) -> dict:
             {"status": "abandoned"}
         ).eq("id", existing["id"]).execute()
 
+    # Pull user fields so project record is self-contained
+    user = get_user(telegram_id) or {}
+
     result = (
         supabase.table("projects")
         .insert({
-            "telegram_id":       telegram_id,
-            "topic":             brief.get("topic", ""),
-            "research_question": brief.get("research_question", ""),
-            "population":        brief.get("population", ""),
-            "time_frame":        brief.get("time_frame", ""),
-            "research_type":     brief.get("research_type", ""),
-            "citation_style":    brief.get("citation_style", ""),
-            "objectives":        json.dumps(brief.get("objectives", [])),
-            "hypotheses":        json.dumps(brief.get("hypotheses", [])),
-            "turnitin":          brief.get("turnitin", False),
-            "supervisor_context":brief.get("supervisor_context", ""),
-            "nigerian_context":  brief.get("nigerian_context", ""),
-            "student_background":brief.get("student_background", ""),
-            "chapters_completed": 0,
+            "telegram_id":         telegram_id,
+            "topic":               brief.get("topic", ""),
+            "research_question":   brief.get("research_question", ""),
+            "population":          brief.get("population", ""),
+            "time_frame":          brief.get("time_frame", ""),
+            "research_type":       brief.get("research_type", ""),
+            "citation_style":      brief.get("citation_style", ""),
+            "objectives":          json.dumps(brief.get("objectives", [])),
+            "hypotheses":          json.dumps(brief.get("hypotheses", [])),
+            "turnitin":            brief.get("turnitin", False),
+            "supervisor_context":  brief.get("supervisor_context", ""),
+            "nigerian_context":    brief.get("nigerian_context", ""),
+            "student_background":  brief.get("student_background", ""),
+            "department":          brief.get("department", "") or user.get("department", ""),
+            "university":          brief.get("university", "") or user.get("university", ""),
+            "academic_level":      brief.get("academic_level", "") or user.get("academic_level", "bsc"),
+            "faculty":             brief.get("faculty", "") or user.get("faculty", ""),
+            "chapters_completed":  0,
             "verified_references": json.dumps([]),
-            "status":            "in_progress",
+            "status":              "in_progress",
         })
         .execute()
     )
     print(f"[supabase] Project created: {result.data[0]['id']} for {telegram_id}")
     return result.data[0]
+
 
 
 def update_project(telegram_id: int, data: dict) -> dict:

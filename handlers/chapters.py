@@ -125,7 +125,11 @@ async def _generate_and_deliver_chapter(
         return
 
     # Build brief dict from project record
-    brief = _project_to_brief(project)
+    # Build brief dict — pull user fields as fallback
+    from services.supabase_service import get_user
+    user = get_user(user_id)
+    brief = _project_to_brief(project, user)
+
 
     # Send "generating" status message
     status_msg = await send_target.reply_text(
@@ -364,8 +368,10 @@ async def handle_ch4_gen_questionnaire(
     if not project:
         await query.message.reply_text("Could not find your project. Send /start.")
         return
-
-    brief = _project_to_brief(project)
+        # Build brief dict — pull user fields as fallback
+    from services.supabase_service import get_user
+    user = get_user(user_id)
+    brief = _project_to_brief(project, user)
     try:
         questionnaire = await generate_questionnaire(brief)
         await send_long_message(
@@ -396,7 +402,10 @@ async def handle_ch4_gen_template(
     print(f"[chapters] ch4_gen_template: user={user_id}")
 
     project = get_active_project(user_id)
-    brief = _project_to_brief(project) if project else {}
+    # handle_ch4_gen_template
+    from services.supabase_service import get_user
+    user = get_user(user_id)
+    brief = _project_to_brief(project, user) if project else {}
 
     template = (
         "📊 *Data Entry Template*\n\n"
@@ -515,9 +524,9 @@ async def handle_download_pdf(
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
-def _project_to_brief(project: dict) -> dict:
-    """Convert a Supabase project record to a brief dict for Claude."""
+def _project_to_brief(project: dict, user: dict = None) -> dict:
     print(f"[chapters] _project_to_brief: project_id={project.get('id')}")
+    u = user or {}
 
     def _parse(field):
         val = project.get(field, [])
@@ -533,21 +542,20 @@ def _project_to_brief(project: dict) -> dict:
         "research_question": project.get("research_question", ""),
         "population":        project.get("population", ""),
         "time_frame":        project.get("time_frame", ""),
-        "research_type":     project.get("research_type", "quantitative"),
-        "citation_style":    project.get("citation_style", "apa7"),
+        "research_type":     project.get("research_type") or u.get("research_type") or "quantitative",
+        "citation_style":    project.get("citation_style") or u.get("citation_style") or "apa7",
         "objectives":        _parse("objectives"),
         "hypotheses":        _parse("hypotheses"),
         "turnitin":          project.get("turnitin", False),
-        "supervisor_context":project.get("supervisor_context", ""),
+        "supervisor_context":project.get("supervisor_context", "") or u.get("supervisor_context", ""),
         "nigerian_context":  project.get("nigerian_context", ""),
         "student_background":project.get("student_background", ""),
         "student_data":      project.get("student_data", ""),
-        "department":        project.get("department", ""),
-        "university":        project.get("university", ""),
-        "academic_level":    project.get("academic_level", "bsc"),
-        "faculty":           project.get("faculty", ""),
+        "department":        project.get("department") or u.get("department") or "",
+        "university":        project.get("university") or u.get("university") or "",
+        "academic_level":    project.get("academic_level") or u.get("academic_level") or "bsc",
+        "faculty":           project.get("faculty") or u.get("faculty") or "",
     }
-
 
 def _load_previous_chapters(project: dict, current_chapter: int) -> dict:
     """Load previously generated chapter content for consistency injection."""
