@@ -1,0 +1,10 @@
+python-telegram-bot==21.5
+fastapi
+uvicorn
+anthropic
+openai
+supabase
+httpx
+python-dotenv
+reportlab
+aiofiles
