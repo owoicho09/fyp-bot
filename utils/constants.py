@@ -19,7 +19,7 @@ FACULTIES = {
     "social_sciences":  "Social Sciences",
     "management":       "Management Sciences",
     "arts_humanities":  "Arts & Humanities",
-    "sciences":         "Natural & Applied Sciences",
+    "sciences":         "Applied Sciences",
     "engineering_tech": "Engineering & Technology",
     "law":              "Law",
     "health_sciences":  "Medicine, Health & Pharmacy",

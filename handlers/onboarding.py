@@ -1,7 +1,7 @@
 print("[onboarding.py] Loading onboarding handler...")
 
 import json
-from telegram import Update, Message
+from telegram import Update
 from telegram.ext import (
     ContextTypes, ConversationHandler, CommandHandler,
     MessageHandler, CallbackQueryHandler, filters,
@@ -56,22 +56,31 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     print(f"[onboarding] /start from user {update.effective_user.id}")
     user = update.effective_user
 
-    # Register user in DB
-    get_or_create_user(
-        telegram_id=user.id,
-        first_name=user.first_name,
-        username=user.username,
-    )
+    try:
+        get_or_create_user(
+            telegram_id=user.id,
+            first_name=user.first_name,
+            username=user.username,
+        )
+    except Exception as e:
+        print(f"[onboarding] get_or_create_user error: {e}")
 
-    # Clear any stale context
+    # Clear all stale context
     context.user_data.clear()
-    context.user_data["topic_retry_count"] = 0
+    context.user_data["topic_retry_count"]    = 0
     context.user_data["conversation_history"] = []
+    context.user_data["onboarding_complete"]  = False
 
     # Check for existing active project — offer resume
-    existing = get_active_project(user.id)
+    try:
+        existing = get_active_project(user.id)
+    except Exception as e:
+        print(f"[onboarding] get_active_project error: {e}")
+        existing = None
+
     if existing and existing.get("chapters_completed", 0) > 0:
         print(f"[onboarding] Returning user {user.id} — {existing['chapters_completed']} chapters done")
+        context.user_data["onboarding_complete"] = True
         await update.message.reply_text(
             get_returning_user_message(
                 user.first_name,
@@ -97,12 +106,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def handle_level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    level = query.data.replace("level_", "")
+    level   = query.data.replace("level_", "")
     user_id = query.from_user.id
     print(f"[onboarding] Level: {level} | user={user_id}")
 
     context.user_data["academic_level"] = level
-    update_user(user_id, {"academic_level": level})
+
+    try:
+        update_user(user_id, {"academic_level": level})
+    except Exception as e:
+        print(f"[onboarding] update_user level error: {e}")
 
     await query.edit_message_text(
         get_faculty_prompt_message(),
@@ -115,7 +128,7 @@ async def handle_level(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 # ─── STEP 2: Faculty ─────────────────────────────────────────────────────────
 
 async def handle_faculty(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
+    query   = update.callback_query
     await query.answer()
     faculty = query.data.replace("faculty_", "")
     user_id = query.from_user.id
@@ -123,7 +136,6 @@ async def handle_faculty(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     context.user_data["faculty"] = faculty
 
-    # Show disclaimer for sensitive faculties immediately
     if faculty in DISCLAIMER_FACULTIES:
         await query.message.reply_text(
             DISCLAIMER_FACULTIES[faculty],
@@ -139,13 +151,23 @@ async def handle_faculty(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 # ─── STEP 3: Department (typed) ───────────────────────────────────────────────
 
-async def handle_department(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    dept = update.message.text.strip()
+async def handle_department(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    dept    = update.message.text.strip()
     user_id = update.effective_user.id
     print(f"[onboarding] Department: '{dept[:60]}' | user={user_id}")
 
+    if not dept:
+        await update.message.reply_text("Please type your department name:")
+        return ASK_DEPARTMENT
+
     context.user_data["department"] = dept
-    update_user(user_id, {"department": dept})
+
+    try:
+        update_user(user_id, {"department": dept})
+    except Exception as e:
+        print(f"[onboarding] update_user department error: {e}")
 
     await update.message.reply_text(
         get_university_prompt_message(),
@@ -156,13 +178,23 @@ async def handle_department(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 # ─── STEP 4: University (typed) ───────────────────────────────────────────────
 
-async def handle_university(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_university(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     university = update.message.text.strip()
-    user_id = update.effective_user.id
+    user_id    = update.effective_user.id
     print(f"[onboarding] University: '{university}' | user={user_id}")
 
+    if not university:
+        await update.message.reply_text("Please type your university name:")
+        return ASK_UNIVERSITY
+
     context.user_data["university"] = university
-    update_user(user_id, {"university": university})
+
+    try:
+        update_user(user_id, {"university": university})
+    except Exception as e:
+        print(f"[onboarding] update_user university error: {e}")
 
     await update.message.reply_text(
         get_topic_opening_message(),
@@ -171,35 +203,47 @@ async def handle_university(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return ASK_TOPIC_OPEN
 
 
-# ─── STEP 5: Topic open question (text or voice) ─────────────────────────────
+# ─── STEP 5: Topic open (text or voice) ──────────────────────────────────────
 
 async def handle_topic_open_text(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    text = update.message.text.strip()
+    text    = update.message.text.strip()
     user_id = update.effective_user.id
     print(f"[onboarding] Topic open (text): '{text[:80]}' | user={user_id}")
+
+    if not text:
+        await update.message.reply_text(
+            "Please tell me about your topic. You can type or send a voice note."
+        )
+        return ASK_TOPIC_OPEN
+
     return await _process_topic_input(update, context, text)
 
 
 async def handle_topic_open_voice(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
+    voice   = update.message.voice
     user_id = update.effective_user.id
-    voice = update.message.voice
-    print(f"[onboarding] Topic open (voice): duration={voice.duration}s | user={user_id}")
+    print(f"[onboarding] Topic open (voice): {voice.duration}s | user={user_id}")
 
     processing_msg = await update.message.reply_text(
-        get_voice_note_processing_message(),
+        get_voice_note_processing_message()
     )
 
-    result = await transcribe_voice_message(
-        bot=context.bot,
-        file_id=voice.file_id,
-    )
+    try:
+        result = await transcribe_voice_message(
+            bot=context.bot,
+            file_id=voice.file_id,
+        )
+    except Exception as e:
+        print(f"[onboarding] voice transcription exception: {e}")
+        await processing_msg.edit_text(get_voice_note_error_message())
+        return ASK_TOPIC_OPEN
 
     if not result["success"]:
-        print(f"[onboarding] Voice transcription failed: {result['error']}")
+        print(f"[onboarding] Voice transcription failed: {result.get('error')}")
         await processing_msg.edit_text(get_voice_note_error_message())
         return ASK_TOPIC_OPEN
 
@@ -218,18 +262,12 @@ async def _process_topic_input(
     context: ContextTypes.DEFAULT_TYPE,
     text: str,
 ) -> int:
-    """
-    Process any topic input — typed or transcribed voice.
-    Runs the intake agent to extract structured data and generate follow-up.
-    """
     user_id = update.effective_user.id
     print(f"[onboarding] _process_topic_input: '{text[:80]}'")
 
-    # Add to conversation history
     history = context.user_data.get("conversation_history", [])
     history.append({"role": "user", "content": text})
 
-    # Run intake agent
     student_context = {
         "academic_level": context.user_data.get("academic_level", ""),
         "faculty":        context.user_data.get("faculty", ""),
@@ -237,21 +275,26 @@ async def _process_topic_input(
         "university":     context.user_data.get("university", ""),
     }
 
-    agent_result = await run_intake_agent(history, student_context)
+    try:
+        agent_result = await run_intake_agent(history, student_context)
+    except Exception as e:
+        print(f"[onboarding] run_intake_agent error: {e}")
+        await update.message.reply_text(
+            "I had a moment there. Could you tell me about your topic again?"
+        )
+        return ASK_TOPIC_OPEN
 
-    # Merge extracted fields into user_data
     extracted = agent_result.get("extracted", {})
     for key, value in extracted.items():
         if value is not None and value != "":
             context.user_data[key] = value
             print(f"[onboarding] Extracted: {key}={str(value)[:50]}")
 
-    # Add agent reply to history
     reply = agent_result.get("reply", "")
     history.append({"role": "assistant", "content": reply})
     context.user_data["conversation_history"] = history
 
-    # Check if we have a topic now — do basic validation
+    # Basic topic validation
     topic = context.user_data.get("topic", "")
     if topic:
         if is_topic_too_short(topic):
@@ -268,38 +311,33 @@ async def _process_topic_input(
             )
             return ASK_TOPIC_OPEN
 
-    # If brief is complete — move to research design
+    # Brief complete — move to research design
     if agent_result.get("brief_complete"):
         print(f"[onboarding] Brief complete after topic open.")
-        await update.message.reply_text(
-            get_followup_transition_message(),
-            parse_mode="Markdown",
-        )
+        if reply:
+            await update.message.reply_text(reply, parse_mode="Markdown")
+        return await _ask_research_design(update, context)
+
+    # Continue with follow-ups
+    if reply:
         await update.message.reply_text(
             reply,
             parse_mode="Markdown",
+            reply_markup=skip_keyboard("skip_followup_1"),
         )
-        return await _ask_research_design(update, context)
-
-    # Send the agent's follow-up question
-    await update.message.reply_text(
-        reply,
-        parse_mode="Markdown",
-        reply_markup=skip_keyboard("skip_followup_1"),
-    )
     return ASK_FOLLOWUP_1
 
 
-# ─── STEP 6–8: Follow-up questions (text or voice) ───────────────────────────
+# ─── STEP 6–8: Follow-up questions ───────────────────────────────────────────
 
 async def handle_followup_text(
     update: Update, context: ContextTypes.DEFAULT_TYPE, state: int
 ) -> int:
-    text = update.message.text.strip()
+    text    = update.message.text.strip()
     user_id = update.effective_user.id
-    print(f"[onboarding] Followup text (state={state}): '{text[:80]}' | user={user_id}")
+    print(f"[onboarding] Followup text state={state}: '{text[:80]}' | user={user_id}")
 
-    if text.lower() == "skip":
+    if text.lower() in ("skip", "s"):
         return await _advance_followup(update, context, state, skipped=True)
 
     return await _run_followup_agent(update, context, text, state)
@@ -308,17 +346,18 @@ async def handle_followup_text(
 async def handle_followup_voice(
     update: Update, context: ContextTypes.DEFAULT_TYPE, state: int
 ) -> int:
-    voice = update.message.voice
+    voice   = update.message.voice
     user_id = update.effective_user.id
-    print(f"[onboarding] Followup voice (state={state}): duration={voice.duration}s | user={user_id}")
+    print(f"[onboarding] Followup voice state={state}: {voice.duration}s | user={user_id}")
 
-    processing_msg = await update.message.reply_text(
-        get_voice_note_processing_message()
-    )
-    result = await transcribe_voice_message(
-        bot=context.bot,
-        file_id=voice.file_id,
-    )
+    processing_msg = await update.message.reply_text(get_voice_note_processing_message())
+
+    try:
+        result = await transcribe_voice_message(bot=context.bot, file_id=voice.file_id)
+    except Exception as e:
+        print(f"[onboarding] followup voice error: {e}")
+        await processing_msg.edit_text(get_voice_note_error_message())
+        return state
 
     if not result["success"]:
         await processing_msg.edit_text(get_voice_note_error_message())
@@ -337,7 +376,7 @@ async def handle_followup_skip(
 ) -> int:
     query = update.callback_query
     await query.answer()
-    print(f"[onboarding] Followup skipped at state={state}")
+    print(f"[onboarding] Followup skipped state={state}")
     return await _advance_followup(update, context, state, skipped=True, query=query)
 
 
@@ -347,9 +386,8 @@ async def _run_followup_agent(
     text: str,
     current_state: int,
 ) -> int:
-    """Run the intake agent for a follow-up question turn."""
     user_id = update.effective_user.id
-    print(f"[onboarding] _run_followup_agent: state={current_state}, text='{text[:60]}'")
+    print(f"[onboarding] _run_followup_agent state={current_state}: '{text[:60]}'")
 
     history = context.user_data.get("conversation_history", [])
     history.append({"role": "user", "content": text})
@@ -359,7 +397,14 @@ async def _run_followup_agent(
         "topic", "research_question", "population", "time_frame",
     ]}
 
-    agent_result = await run_intake_agent(history, student_context)
+    try:
+        agent_result = await run_intake_agent(history, student_context)
+    except Exception as e:
+        print(f"[onboarding] _run_followup_agent error: {e}")
+        await update.message.reply_text(
+            "I had a moment. Please try again or type 'skip' to continue."
+        )
+        return current_state
 
     extracted = agent_result.get("extracted", {})
     for key, value in extracted.items():
@@ -370,10 +415,10 @@ async def _run_followup_agent(
     history.append({"role": "assistant", "content": reply})
     context.user_data["conversation_history"] = history
 
-    # If brief complete — skip to research design
     if agent_result.get("brief_complete"):
         print(f"[onboarding] Brief complete at followup state={current_state}")
-        await update.message.reply_text(reply, parse_mode="Markdown")
+        if reply:
+            await update.message.reply_text(reply, parse_mode="Markdown")
         return await _ask_research_design(update, context)
 
     return await _advance_followup(update, context, current_state, reply=reply)
@@ -387,73 +432,76 @@ async def _advance_followup(
     reply: str = None,
     query=None,
 ) -> int:
-    """Move to next follow-up state or proceed to research design."""
     next_states = {
         ASK_FOLLOWUP_1: ASK_FOLLOWUP_2,
         ASK_FOLLOWUP_2: ASK_FOLLOWUP_3,
         ASK_FOLLOWUP_3: ASK_SUPERVISOR,
     }
-    next_state = next_states.get(current_state)
-    msg_target = query.message if query else update.message
+    next_state  = next_states.get(current_state)
+    msg_target  = query.message if query else update.message
 
     if reply and not skipped:
         await msg_target.reply_text(reply, parse_mode="Markdown")
 
     if next_state == ASK_SUPERVISOR:
+        supervisor_msg = get_supervisor_prompt_message()
+        if isinstance(supervisor_msg, tuple):
+            supervisor_msg = supervisor_msg[0]
         await msg_target.reply_text(
-            get_supervisor_prompt_message()[0]
-            if isinstance(get_supervisor_prompt_message(), tuple)
-            else get_supervisor_prompt_message(),
+            supervisor_msg,
             parse_mode="Markdown",
             reply_markup=skip_keyboard("skip_supervisor"),
         )
         return ASK_SUPERVISOR
 
     if next_state:
-        # Continue with more follow-up questions via agent
         history = context.user_data.get("conversation_history", [])
         student_context = {k: context.user_data.get(k, "") for k in [
             "academic_level", "faculty", "department", "university",
             "topic", "research_question", "population", "time_frame",
         ]}
-        # Ask agent what to ask next
         history.append({
             "role": "user",
-            "content": "[SYSTEM: Student skipped or we need the next follow-up question]"
+            "content": "[SYSTEM: Student skipped — ask the next follow-up question]"
         })
-        agent_result = await run_intake_agent(history, student_context)
-        next_reply = agent_result.get("reply", "")
+
+        try:
+            agent_result = await run_intake_agent(history, student_context)
+        except Exception as e:
+            print(f"[onboarding] _advance_followup agent error: {e}")
+            return await _ask_research_design(update, context)
 
         if agent_result.get("brief_complete"):
             return await _ask_research_design(update, context)
 
+        next_reply = agent_result.get("reply", "")
         history.append({"role": "assistant", "content": next_reply})
         context.user_data["conversation_history"] = history
 
-        await msg_target.reply_text(
-            next_reply,
-            parse_mode="Markdown",
-            reply_markup=skip_keyboard(f"skip_followup_{next_state}"),
-        )
+        if next_reply:
+            await msg_target.reply_text(
+                next_reply,
+                parse_mode="Markdown",
+                reply_markup=skip_keyboard(f"skip_followup_{next_state}"),
+            )
         return next_state
 
-    # All follow-ups done
     return await _ask_research_design(update, context)
 
 
-# ─── Followup handlers bound to each state ───────────────────────────────────
+# ─── Followup state bindings ─────────────────────────────────────────────────
 
-async def handle_followup_1_text(u, c): return await handle_followup_text(u, c, ASK_FOLLOWUP_1)
+async def handle_followup_1_text(u, c):  return await handle_followup_text(u, c, ASK_FOLLOWUP_1)
 async def handle_followup_1_voice(u, c): return await handle_followup_voice(u, c, ASK_FOLLOWUP_1)
-async def handle_followup_1_skip(u, c): return await handle_followup_skip(u, c, ASK_FOLLOWUP_1)
+async def handle_followup_1_skip(u, c):  return await handle_followup_skip(u, c, ASK_FOLLOWUP_1)
 
-async def handle_followup_2_text(u, c): return await handle_followup_text(u, c, ASK_FOLLOWUP_2)
+async def handle_followup_2_text(u, c):  return await handle_followup_text(u, c, ASK_FOLLOWUP_2)
 async def handle_followup_2_voice(u, c): return await handle_followup_voice(u, c, ASK_FOLLOWUP_2)
-async def handle_followup_2_skip(u, c): return await handle_followup_skip(u, c, ASK_FOLLOWUP_2)
+async def handle_followup_2_skip(u, c):  return await handle_followup_skip(u, c, ASK_FOLLOWUP_2)
 
-async def handle_followup_3_text(u, c): return await handle_followup_text(u, c, ASK_FOLLOWUP_3)
+async def handle_followup_3_text(u, c):  return await handle_followup_text(u, c, ASK_FOLLOWUP_3)
 async def handle_followup_3_voice(u, c): return await handle_followup_voice(u, c, ASK_FOLLOWUP_3)
-async def handle_followup_3_skip(u, c): return await handle_followup_skip(u, c, ASK_FOLLOWUP_3)
+async def handle_followup_3_skip(u, c):  return await handle_followup_skip(u, c, ASK_FOLLOWUP_3)
 
 
 # ─── STEP 9: Supervisor context ───────────────────────────────────────────────
@@ -461,11 +509,11 @@ async def handle_followup_3_skip(u, c): return await handle_followup_skip(u, c, 
 async def handle_supervisor_text(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    text = update.message.text.strip()
+    text    = update.message.text.strip()
     user_id = update.effective_user.id
     print(f"[onboarding] Supervisor context: '{text[:80]}' | user={user_id}")
 
-    if text.lower() != "skip":
+    if text.lower() not in ("skip", "s", ""):
         context.user_data["supervisor_context"] = text
 
     return await _ask_research_design(update, context)
@@ -476,7 +524,7 @@ async def handle_supervisor_skip(
 ) -> int:
     query = update.callback_query
     await query.answer()
-    print(f"[onboarding] Supervisor context skipped | user={query.from_user.id}")
+    print(f"[onboarding] Supervisor skipped | user={query.from_user.id}")
     return await _ask_research_design(update, context, message=query.message)
 
 
@@ -487,13 +535,11 @@ async def _ask_research_design(
     context: ContextTypes.DEFAULT_TYPE,
     message=None,
 ) -> int:
-    """Transition to research design selection."""
     print("[onboarding] _ask_research_design")
     msg_target = message or update.message
 
-    # If research design already extracted by agent, skip to citation
-    if context.user_data.get("research_type") and \
-       context.user_data["research_type"] != "help_choose":
+    existing = context.user_data.get("research_type", "")
+    if existing and existing != "help_choose":
         return await _ask_citation(update, context, message=msg_target)
 
     await msg_target.reply_text(
@@ -507,19 +553,23 @@ async def _ask_research_design(
 async def handle_research_design(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    query = update.callback_query
+    query   = update.callback_query
     await query.answer()
-    design = query.data.replace("design_", "")
+    design  = query.data.replace("design_", "")
     user_id = query.from_user.id
     print(f"[onboarding] Research design: {design} | user={user_id}")
 
     if design == "help_choose":
-        # Ask Claude to recommend
-        recommendation = await recommend_research_design(
-            topic=context.user_data.get("topic", ""),
-            department=context.user_data.get("department", ""),
-            research_question=context.user_data.get("research_question", ""),
-        )
+        try:
+            recommendation = await recommend_research_design(
+                topic=context.user_data.get("topic", ""),
+                department=context.user_data.get("department", ""),
+                research_question=context.user_data.get("research_question", ""),
+            )
+        except Exception as e:
+            print(f"[onboarding] recommend_research_design error: {e}")
+            recommendation = "Quantitative research design using a structured questionnaire is recommended."
+
         await query.edit_message_text(
             get_research_design_prompt_message(recommendation),
             parse_mode="Markdown",
@@ -541,9 +591,8 @@ async def _ask_citation(
     print("[onboarding] _ask_citation")
     msg_target = message or update.message
 
-    # If already extracted by agent, skip to turnitin
-    if context.user_data.get("citation_style") and \
-       context.user_data["citation_style"] != "not_sure":
+    existing = context.user_data.get("citation_style", "")
+    if existing and existing != "not_sure":
         return await _ask_turnitin(update, context, message=msg_target)
 
     await msg_target.reply_text(
@@ -557,17 +606,17 @@ async def _ask_citation(
 async def handle_citation(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    query = update.callback_query
+    query    = update.callback_query
     await query.answer()
     citation = query.data.replace("cite_", "")
-    user_id = query.from_user.id
+    user_id  = query.from_user.id
     print(f"[onboarding] Citation: {citation} | user={user_id}")
 
     context.user_data["citation_style"] = citation
     return await _ask_turnitin(update, context, message=query.message)
 
 
-# ─── STEP 12: Turnitin check ──────────────────────────────────────────────────
+# ─── STEP 12: Turnitin ────────────────────────────────────────────────────────
 
 async def _ask_turnitin(
     update: Update,
@@ -577,7 +626,6 @@ async def _ask_turnitin(
     print("[onboarding] _ask_turnitin")
     msg_target = message or update.message
 
-    # Skip if already known
     if "turnitin" in context.user_data:
         return await _show_brief_confirmation(update, context, message=msg_target)
 
@@ -592,10 +640,10 @@ async def _ask_turnitin(
 async def handle_turnitin(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    query = update.callback_query
+    query    = update.callback_query
     await query.answer()
     turnitin = query.data == "turnitin_yes"
-    user_id = query.from_user.id
+    user_id  = query.from_user.id
     print(f"[onboarding] Turnitin: {turnitin} | user={user_id}")
 
     context.user_data["turnitin"] = turnitin
@@ -610,37 +658,40 @@ async def _show_brief_confirmation(
     message=None,
 ) -> int:
     print("[onboarding] _show_brief_confirmation")
-    user_id = update.effective_user.id if update.effective_user else None
+    user_id    = update.effective_user.id if update.effective_user else None
     msg_target = message or update.message
 
-    # Validate topic one final time with AI
-    topic = context.user_data.get("topic", "")
+    topic       = context.user_data.get("topic", "")
     retry_count = context.user_data.get("topic_retry_count", 0)
 
+    # AI topic validation
     if topic and retry_count < MAX_TOPIC_RETRIES:
         await msg_target.reply_text("Validating your topic... ⏳")
-        validation = await validate_topic_with_ai(
-            topic=topic,
-            department=context.user_data.get("department", ""),
-            level=context.user_data.get("academic_level", ""),
-            university=context.user_data.get("university", ""),
-        )
-        if not validation["is_valid"]:
+        try:
+            validation = await validate_topic_with_ai(
+                topic=topic,
+                department=context.user_data.get("department", ""),
+                level=context.user_data.get("academic_level", ""),
+                university=context.user_data.get("university", ""),
+            )
+        except Exception as e:
+            print(f"[onboarding] validate_topic_with_ai error: {e}")
+            validation = {"is_valid": True}
+
+        if not validation.get("is_valid"):
             context.user_data["topic_retry_count"] = retry_count + 1
             await msg_target.reply_text(
                 get_validation_failed_message(
-                    validation["feedback"],
+                    validation.get("feedback", ""),
                     validation.get("suggestions", []),
                 ),
                 parse_mode="Markdown",
             )
-            await msg_target.reply_text(
-                "Type your revised topic:",
-            )
+            await msg_target.reply_text("Type your revised topic:")
             return ASK_TOPIC_OPEN
 
-    # Build and show the brief card
-    brief = extract_brief_from_context(context.user_data)
+    # Show brief card
+    brief     = extract_brief_from_context(context.user_data)
     brief_card = format_project_brief(brief)
 
     await msg_target.reply_text(
@@ -653,9 +704,11 @@ async def _show_brief_confirmation(
         reply_markup=confirm_brief_keyboard(),
     )
 
-    # Save brief to Supabase
     if user_id:
-        upsert_session(user_id, "brief_confirmed", brief)
+        try:
+            upsert_session(user_id, "brief_confirmed", brief)
+        except Exception as e:
+            print(f"[onboarding] upsert_session error: {e}")
 
     print(f"[onboarding] Brief shown to user {user_id}")
     return CONFIRM_BRIEF
@@ -666,9 +719,9 @@ async def _show_brief_confirmation(
 async def handle_confirm_brief(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    query = update.callback_query
+    query   = update.callback_query
     await query.answer()
-    action = query.data
+    action  = query.data
     user_id = query.from_user.id
     print(f"[onboarding] Confirm brief action: {action} | user={user_id}")
 
@@ -676,23 +729,35 @@ async def handle_confirm_brief(
         context.user_data.pop("topic", None)
         context.user_data.pop("research_question", None)
         await query.edit_message_text(
-            "No problem. Tell me your revised topic "
-            "(type or send a voice note):",
+            "No problem. Tell me your revised topic (type or send a voice note):",
         )
         return ASK_TOPIC_OPEN
 
     if action == "restart":
         context.user_data.clear()
-        clear_session(user_id)
-        await query.edit_message_text(
-            "Starting fresh. Send /start to begin."
-        )
+        try:
+            clear_session(user_id)
+        except Exception as e:
+            print(f"[onboarding] clear_session error: {e}")
+        await query.edit_message_text("Starting fresh. Send /start to begin.")
         return ConversationHandler.END
 
     if action == "gen_chapter_1":
-        # Save the full project to Supabase
         brief = extract_brief_from_context(context.user_data)
-        create_project(user_id, brief)
+
+        try:
+            create_project(user_id, brief)
+        except Exception as e:
+            print(f"[onboarding] create_project error: {e}")
+            await query.message.reply_text(
+                "Something went wrong saving your project. Please send /start and try again."
+            )
+            return ConversationHandler.END
+
+        # Mark onboarding complete — prevents global handler from intercepting
+        context.user_data["onboarding_complete"]  = True
+        context.user_data["conversation_history"] = []
+
         print(f"[onboarding] Project created for {user_id}. Handing off to chapter handler.")
 
         await query.edit_message_text(
@@ -701,9 +766,16 @@ async def handle_confirm_brief(
             parse_mode="Markdown",
         )
 
-        # Import here to avoid circular imports
-        from handlers.chapters import generate_chapter_1
-        await generate_chapter_1(query, context)
+        try:
+            from handlers.chapters import generate_chapter_1
+            await generate_chapter_1(query, context)
+        except Exception as e:
+            print(f"[onboarding] generate_chapter_1 error: {e}")
+            await query.message.reply_text(
+                "Chapter 1 generation failed. Send /start and tap Continue — "
+                "your project is saved and you can try again."
+            )
+
         return ConversationHandler.END
 
     return CONFIRM_BRIEF
@@ -761,7 +833,7 @@ def get_onboarding_handler() -> ConversationHandler:
                 CallbackQueryHandler(handle_turnitin, pattern="^turnitin_"),
                 CallbackQueryHandler(
                     handle_confirm_brief,
-                    pattern="^(gen_chapter_1|change_topic|restart)$"
+                    pattern="^(gen_chapter_1|change_topic|restart)$",
                 ),
             ],
         },

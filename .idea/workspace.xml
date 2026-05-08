@@ -6,10 +6,9 @@
   <component name="ChangeListManager">
     <list default="true" id="9d8420ec-157e-4e0a-a435-0647ef0406cb" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/handlers/chapters.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/chapters.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/supabase_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/services/supabase_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/prompts/chapter_3.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/prompts/chapter_3.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/prompts/chapter_4.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/prompts/chapter_4.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/handlers/conversation.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/conversation.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/handlers/onboarding.py" beforeDir="false" afterPath="$PROJECT_DIR$/handlers/onboarding.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/constants.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/constants.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
