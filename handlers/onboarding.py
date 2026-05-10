@@ -9,9 +9,7 @@ from services.supabase_service import (
     get_or_create_user, update_user, get_active_project,
     create_project, upsert_session, clear_session,
 )
-from services.claude_service import (
-    run_intake_agent, validate_topic_with_ai,
-)
+from services.claude_service import run_intake_agent
 from services.whisper_service import (
     transcribe_voice_message,
     build_voice_received_message,
@@ -33,18 +31,17 @@ from utils.prompts.intake_agent import (
     get_voice_note_error_message,
     get_brief_complete_transition,
     get_brief_confirmation_message,
-    get_validation_failed_message,
-    get_topic_too_short_message,
-    get_topic_looks_like_question_message,
     get_topic_opening_message,
     get_department_prompt_message,
     get_university_prompt_message,
     get_faculty_prompt_message,
+    get_topic_too_short_message,
+    get_topic_looks_like_question_message,
 )
 from utils.constants import (
     ASK_LEVEL, ASK_FACULTY, ASK_DEPARTMENT, ASK_UNIVERSITY,
     ASK_TOPIC_OPEN, ASK_FOLLOWUP_1, CONFIRM_BRIEF,
-    DISCLAIMER_FACULTIES, MAX_TOPIC_RETRIES,
+    DISCLAIMER_FACULTIES,
 )
 
 
@@ -64,7 +61,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         print(f"[onboarding] get_or_create_user error: {e}")
 
     context.user_data.clear()
-    context.user_data["topic_retry_count"]    = 0
     context.user_data["conversation_history"] = []
     context.user_data["onboarding_complete"]  = False
 
@@ -200,8 +196,16 @@ async def handle_topic_text(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     if not text:
         await update.message.reply_text(
-            "Please tell me your topic. You can type or send a voice note 🎙️"
+            "Please tell me your topic. You can type or send a 🎙️ voice note."
         )
+        return ASK_TOPIC_OPEN
+
+    if is_topic_too_short(text):
+        await update.message.reply_text(get_topic_too_short_message(), parse_mode="Markdown")
+        return ASK_TOPIC_OPEN
+
+    if looks_like_question(text):
+        await update.message.reply_text(get_topic_looks_like_question_message(), parse_mode="Markdown")
         return ASK_TOPIC_OPEN
 
     return await _process_topic(update, context, text)
@@ -212,16 +216,12 @@ async def handle_topic_voice(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user_id = update.effective_user.id
     print(f"[onboarding] Topic voice: {voice.duration}s | user={user_id}")
 
-    processing_msg = await update.message.reply_text(
-        get_voice_note_processing_message()
-    )
+    processing_msg = await update.message.reply_text(get_voice_note_processing_message())
 
     try:
-        result = await transcribe_voice_message(
-            bot=context.bot, file_id=voice.file_id
-        )
+        result = await transcribe_voice_message(bot=context.bot, file_id=voice.file_id)
     except Exception as e:
-        print(f"[onboarding] voice transcription error: {e}")
+        print(f"[onboarding] voice error: {e}")
         await processing_msg.edit_text(get_voice_note_error_message())
         return ASK_TOPIC_OPEN
 
@@ -244,12 +244,13 @@ async def _process_topic(
     text: str,
 ) -> int:
     """
-    Feed the topic to the intake agent.
-    Claude extracts: topic, research_question, population, time_frame,
-    research_type, citation_style, nigerian_context, student_background.
+    Run the intake agent on the topic message.
+    Claude silently extracts: topic, research_question, population,
+    time_frame, research_type, citation_style, nigerian_context.
 
-    - If brief_complete → skip follow-up, go straight to confirmation.
-    - If not complete → send ONE smart follow-up question, then confirm.
+    If it has enough → go straight to brief confirmation.
+    If it needs ONE thing → ask one smart question then confirm.
+    No more than one follow-up. Ever.
     """
     user_id = update.effective_user.id
     print(f"[onboarding] _process_topic: '{text[:80]}'")
@@ -265,54 +266,44 @@ async def _process_topic(
     }
 
     try:
-        agent_result = await run_intake_agent(history, student_context)
+        result = await run_intake_agent(history, student_context)
     except Exception as e:
         print(f"[onboarding] run_intake_agent error: {e}")
-        await update.message.reply_text(
-            "I had a moment there. Could you tell me about your topic again?"
-        )
-        return ASK_TOPIC_OPEN
+        # On error — store topic and proceed anyway
+        context.user_data["topic"] = text
+        return await _show_brief(update, context)
 
-    # Merge everything Claude extracted
-    extracted = agent_result.get("extracted", {})
+    # Merge extracted fields — never overwrite topic with something different
+    extracted = result.get("extracted", {})
     for key, value in extracted.items():
         if value is not None and value != "":
             context.user_data[key] = value
-            print(f"[onboarding] Extracted: {key}={str(value)[:60]}")
+            print(f"[onboarding] Extracted: {key} = {str(value)[:60]}")
 
-    reply = agent_result.get("reply", "")
+    # Always store the raw text as topic if nothing better was extracted
+    if not context.user_data.get("topic"):
+        context.user_data["topic"] = text
+
+    reply = result.get("reply", "")
     history.append({"role": "assistant", "content": reply})
     context.user_data["conversation_history"] = history
 
-    # Basic sanity checks on topic
-    topic = context.user_data.get("topic", "")
-    if topic:
-        if is_topic_too_short(topic):
-            await update.message.reply_text(
-                get_topic_too_short_message(),
-                parse_mode="Markdown",
-            )
-            return ASK_TOPIC_OPEN
-        if looks_like_question(topic):
-            await update.message.reply_text(
-                get_topic_looks_like_question_message(),
-                parse_mode="Markdown",
-            )
-            return ASK_TOPIC_OPEN
+    # Claude says it has enough — go straight to brief
+    if result.get("brief_complete"):
+        print(f"[onboarding] Brief complete — skipping follow-up")
+        return await _show_brief(update, context)
 
-    # Claude got everything it needs — skip the follow-up
-    if agent_result.get("brief_complete"):
-        print(f"[onboarding] Brief complete — going straight to confirmation")
-        return await _show_brief_confirmation(update, context)
-
-    # Ask ONE follow-up then confirm regardless of answer
+    # Ask ONE follow-up if Claude needs one more piece
     if reply:
         await update.message.reply_text(
             reply,
             parse_mode="Markdown",
             reply_markup=skip_keyboard("skip_followup"),
         )
-    return ASK_FOLLOWUP_1
+        return ASK_FOLLOWUP_1
+
+    # No follow-up needed — go to brief
+    return await _show_brief(update, context)
 
 
 # ─── STEP 6: ONE follow-up ────────────────────────────────────────────────────
@@ -323,7 +314,7 @@ async def handle_followup_text(update: Update, context: ContextTypes.DEFAULT_TYP
     print(f"[onboarding] Followup text: '{text[:80]}' | user={user_id}")
 
     if text.lower() in ("skip", "s"):
-        return await _show_brief_confirmation(update, context)
+        return await _show_brief(update, context)
 
     return await _process_followup(update, context, text)
 
@@ -340,11 +331,11 @@ async def handle_followup_voice(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception as e:
         print(f"[onboarding] followup voice error: {e}")
         await processing_msg.edit_text(get_voice_note_error_message())
-        return await _show_brief_confirmation(update, context)
+        return await _show_brief(update, context)
 
     if not result["success"]:
         await processing_msg.edit_text(get_voice_note_error_message())
-        return await _show_brief_confirmation(update, context)
+        return await _show_brief(update, context)
 
     transcript = result["transcript"]
     await processing_msg.edit_text(
@@ -358,7 +349,7 @@ async def handle_followup_skip(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
     print(f"[onboarding] Followup skipped")
-    return await _show_brief_confirmation(update, context, message=query.message)
+    return await _show_brief(update, context, message=query.message)
 
 
 async def _process_followup(
@@ -367,9 +358,8 @@ async def _process_followup(
     text: str,
 ) -> int:
     """
-    Process the single follow-up answer.
-    Extract anything useful, then go straight to confirmation.
-    No more questions after this.
+    Process the one follow-up answer.
+    Extract anything useful then go straight to brief — no more questions.
     """
     user_id = update.effective_user.id
     print(f"[onboarding] _process_followup: '{text[:80]}'")
@@ -383,61 +373,35 @@ async def _process_followup(
     ]}
 
     try:
-        agent_result = await run_intake_agent(history, student_context)
-        extracted = agent_result.get("extracted", {})
+        result = await run_intake_agent(history, student_context)
+        extracted = result.get("extracted", {})
         for key, value in extracted.items():
             if value is not None and value != "":
                 context.user_data[key] = value
-                print(f"[onboarding] Followup extracted: {key}={str(value)[:60]}")
-        reply = agent_result.get("reply", "")
-        history.append({"role": "assistant", "content": reply})
+                print(f"[onboarding] Followup extracted: {key} = {str(value)[:60]}")
+        history.append({"role": "assistant", "content": result.get("reply", "")})
         context.user_data["conversation_history"] = history
     except Exception as e:
-        print(f"[onboarding] _process_followup agent error: {e}")
+        print(f"[onboarding] _process_followup error: {e}")
 
-    # Always go to confirmation after one follow-up — no more questions
-    return await _show_brief_confirmation(update, context)
+    # Always proceed to brief after one follow-up — no exceptions
+    return await _show_brief(update, context)
 
 
 # ─── BRIEF CONFIRMATION ───────────────────────────────────────────────────────
 
-async def _show_brief_confirmation(
+async def _show_brief(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     message=None,
 ) -> int:
-    print("[onboarding] _show_brief_confirmation")
+    """
+    Show the assembled project brief to the student for confirmation.
+    No validation. No rejection. Just show what we have and let them confirm.
+    """
+    print("[onboarding] _show_brief")
     user_id    = update.effective_user.id if update.effective_user else None
     msg_target = message or update.message
-
-    topic       = context.user_data.get("topic", "")
-    retry_count = context.user_data.get("topic_retry_count", 0)
-
-    # Final AI topic validation
-    if topic and retry_count < MAX_TOPIC_RETRIES:
-        await msg_target.reply_text("Checking your topic... ⏳")
-        try:
-            validation = await validate_topic_with_ai(
-                topic=topic,
-                department=context.user_data.get("department", ""),
-                level=context.user_data.get("academic_level", ""),
-                university=context.user_data.get("university", ""),
-            )
-        except Exception as e:
-            print(f"[onboarding] validate_topic error: {e}")
-            validation = {"is_valid": True}
-
-        if not validation.get("is_valid"):
-            context.user_data["topic_retry_count"] = retry_count + 1
-            await msg_target.reply_text(
-                get_validation_failed_message(
-                    validation.get("feedback", ""),
-                    validation.get("suggestions", []),
-                ),
-                parse_mode="Markdown",
-            )
-            await msg_target.reply_text("Type your revised topic:")
-            return ASK_TOPIC_OPEN
 
     brief      = extract_brief_from_context(context.user_data)
     brief_card = format_project_brief(brief)
@@ -477,7 +441,7 @@ async def handle_confirm_brief(
         context.user_data.pop("topic", None)
         context.user_data.pop("research_question", None)
         await query.edit_message_text(
-            "No problem. Type your revised topic or send a voice note 🎙️:"
+            "No problem. Type your revised topic or send a 🎙️ voice note:"
         )
         return ASK_TOPIC_OPEN
 
