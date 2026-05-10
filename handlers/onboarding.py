@@ -44,6 +44,9 @@ from utils.constants import (
     DISCLAIMER_FACULTIES,
 )
 
+# We add one extra state for the chapter format question
+ASK_CHAPTER_FORMAT = 30
+
 
 # ─── /start ───────────────────────────────────────────────────────────────────
 
@@ -180,6 +183,36 @@ async def handle_university(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     except Exception as e:
         print(f"[onboarding] update_user university error: {e}")
 
+    # Ask about chapter format — this is the key differentiator
+    await update.message.reply_text(
+        "One quick question before your topic.\n\n"
+        "Does your department or university specify *exact chapter headings or section names* "
+        "for your project format?\n\n"
+        "For example, some schools use:\n"
+        "• _'Materials and Methods'_ instead of _'Research Methodology'_\n"
+        "• _'Results and Interpretation'_ instead of _'Data Presentation'_\n"
+        "• _'Justification of Study'_ instead of _'Significance of Study'_\n\n"
+        "If your school gave you a specific format, type the section names here. "
+        "If you are not sure or your school uses the standard format, tap *Skip*:",
+        parse_mode="Markdown",
+        reply_markup=skip_keyboard("skip_chapter_format"),
+    )
+    return ASK_CHAPTER_FORMAT
+
+
+# ─── STEP 5: Chapter format (optional) ───────────────────────────────────────
+
+async def handle_chapter_format_text(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    text    = update.message.text.strip()
+    user_id = update.effective_user.id
+    print(f"[onboarding] Chapter format: '{text[:100]}' | user={user_id}")
+
+    if text.lower() not in ("skip", "s", "no", "none", ""):
+        context.user_data["chapter_format"] = text
+        print(f"[onboarding] Chapter format saved: {text[:100]}")
+
     await update.message.reply_text(
         get_topic_opening_message(),
         parse_mode="Markdown",
@@ -187,7 +220,21 @@ async def handle_university(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return ASK_TOPIC_OPEN
 
 
-# ─── STEP 5: Topic (text or voice) ───────────────────────────────────────────
+async def handle_chapter_format_skip(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    await query.answer()
+    print(f"[onboarding] Chapter format skipped | user={query.from_user.id}")
+
+    await query.message.reply_text(
+        get_topic_opening_message(),
+        parse_mode="Markdown",
+    )
+    return ASK_TOPIC_OPEN
+
+
+# ─── STEP 6: Topic (text or voice) ───────────────────────────────────────────
 
 async def handle_topic_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text    = update.message.text.strip()
@@ -230,7 +277,6 @@ async def handle_topic_voice(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ASK_TOPIC_OPEN
 
     transcript = result["transcript"]
-    print(f"[onboarding] Transcript: '{transcript[:100]}'")
     await processing_msg.edit_text(
         build_transcription_preview(transcript),
         parse_mode="Markdown",
@@ -245,12 +291,9 @@ async def _process_topic(
 ) -> int:
     """
     Run the intake agent on the topic message.
-    Claude silently extracts: topic, research_question, population,
-    time_frame, research_type, citation_style, nigerian_context.
-
-    If it has enough → go straight to brief confirmation.
-    If it needs ONE thing → ask one smart question then confirm.
-    No more than one follow-up. Ever.
+    If Claude has enough → go to brief.
+    If it needs one thing → ask one follow-up then confirm.
+    Never more than one follow-up.
     """
     user_id = update.effective_user.id
     print(f"[onboarding] _process_topic: '{text[:80]}'")
@@ -259,28 +302,28 @@ async def _process_topic(
     history.append({"role": "user", "content": text})
 
     student_context = {
-        "academic_level": context.user_data.get("academic_level", ""),
-        "faculty":        context.user_data.get("faculty", ""),
-        "department":     context.user_data.get("department", ""),
-        "university":     context.user_data.get("university", ""),
+        "academic_level":  context.user_data.get("academic_level", ""),
+        "faculty":         context.user_data.get("faculty", ""),
+        "department":      context.user_data.get("department", ""),
+        "university":      context.user_data.get("university", ""),
+        "chapter_format":  context.user_data.get("chapter_format", ""),
     }
 
     try:
         result = await run_intake_agent(history, student_context)
     except Exception as e:
         print(f"[onboarding] run_intake_agent error: {e}")
-        # On error — store topic and proceed anyway
         context.user_data["topic"] = text
         return await _show_brief(update, context)
 
-    # Merge extracted fields — never overwrite topic with something different
+    # Merge extracted fields — never overwrite with empty values
     extracted = result.get("extracted", {})
     for key, value in extracted.items():
         if value is not None and value != "":
             context.user_data[key] = value
             print(f"[onboarding] Extracted: {key} = {str(value)[:60]}")
 
-    # Always store the raw text as topic if nothing better was extracted
+    # Always preserve the raw topic if nothing extracted
     if not context.user_data.get("topic"):
         context.user_data["topic"] = text
 
@@ -288,12 +331,12 @@ async def _process_topic(
     history.append({"role": "assistant", "content": reply})
     context.user_data["conversation_history"] = history
 
-    # Claude says it has enough — go straight to brief
+    # Claude has enough — go straight to brief
     if result.get("brief_complete"):
-        print(f"[onboarding] Brief complete — skipping follow-up")
+        print(f"[onboarding] Brief complete — going to confirmation")
         return await _show_brief(update, context)
 
-    # Ask ONE follow-up if Claude needs one more piece
+    # Ask ONE follow-up
     if reply:
         await update.message.reply_text(
             reply,
@@ -302,11 +345,10 @@ async def _process_topic(
         )
         return ASK_FOLLOWUP_1
 
-    # No follow-up needed — go to brief
     return await _show_brief(update, context)
 
 
-# ─── STEP 6: ONE follow-up ────────────────────────────────────────────────────
+# ─── STEP 7: ONE follow-up ────────────────────────────────────────────────────
 
 async def handle_followup_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text    = update.message.text.strip()
@@ -359,7 +401,7 @@ async def _process_followup(
 ) -> int:
     """
     Process the one follow-up answer.
-    Extract anything useful then go straight to brief — no more questions.
+    Extract anything useful then go straight to brief — no more questions ever.
     """
     user_id = update.effective_user.id
     print(f"[onboarding] _process_followup: '{text[:80]}'")
@@ -370,6 +412,7 @@ async def _process_followup(
     student_context = {k: context.user_data.get(k, "") for k in [
         "academic_level", "faculty", "department", "university",
         "topic", "research_question", "population", "time_frame",
+        "chapter_format",
     ]}
 
     try:
@@ -396,8 +439,9 @@ async def _show_brief(
     message=None,
 ) -> int:
     """
-    Show the assembled project brief to the student for confirmation.
-    No validation. No rejection. Just show what we have and let them confirm.
+    Show the assembled project brief for confirmation.
+    No validation. No rejection. Show what we have and let them confirm.
+    The student's supervisor will validate the topic — not us.
     """
     print("[onboarding] _show_brief")
     user_id    = update.effective_user.id if update.effective_user else None
@@ -510,6 +554,10 @@ def get_onboarding_handler() -> ConversationHandler:
             ],
             ASK_UNIVERSITY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_university),
+            ],
+            ASK_CHAPTER_FORMAT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_chapter_format_text),
+                CallbackQueryHandler(handle_chapter_format_skip, pattern="^skip_chapter_format$"),
             ],
             ASK_TOPIC_OPEN: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_topic_text),

@@ -555,6 +555,7 @@ def _project_to_brief(project: dict, user: dict = None) -> dict:
         "university":        project.get("university") or u.get("university") or "",
         "academic_level":    project.get("academic_level") or u.get("academic_level") or "bsc",
         "faculty":           project.get("faculty") or u.get("faculty") or "",
+        "chapter_format": project.get("chapter_format") or u.get("chapter_format", ""),
     }
 
 def _load_previous_chapters(project: dict, current_chapter: int) -> dict:

@@ -152,6 +152,7 @@ def create_project(telegram_id: int, brief: dict) -> dict:
             "university":          brief.get("university", "") or user.get("university", ""),
             "academic_level":      brief.get("academic_level", "") or user.get("academic_level", "bsc"),
             "faculty":             brief.get("faculty", "") or user.get("faculty", ""),
+            "chapter_format":      brief.get("chapter_format", ""),
             "chapters_completed":  0,
             "verified_references": json.dumps([]),
             "status":              "in_progress",
