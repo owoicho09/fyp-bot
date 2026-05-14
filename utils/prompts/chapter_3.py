@@ -2,22 +2,19 @@ print("[chapter_3.py] Loading Chapter 3 prompt builder...")
 
 
 def get_chapter_3_prompt(brief: dict) -> str:
-    """
-    Build the user-turn prompt for Chapter 3: Research Methodology.
-    Must be consistent with the research design, population, and objectives
-    established in Chapter 1.
-    """
     print(f"[chapter_3] Building prompt for: {brief.get('topic', '')[:60]}")
 
     topic          = brief.get("topic", "")
     population     = brief.get("population", "")
     time_frame     = brief.get("time_frame", "")
-    research_type = brief.get("research_type", "quantitative") or "quantitative"
-    department = brief.get("department", "") or ""
+    research_type  = brief.get("research_type", "quantitative") or "quantitative"
+    department     = brief.get("department", "") or ""
     university     = brief.get("university", "")
-    citation_style = brief.get("citation_style", "apa7")
+    citation_style = brief.get("citation_style", "apa7") or "apa7"
     objectives     = brief.get("objectives", [])
     nigerian_ctx   = brief.get("nigerian_context", "")
+    chapter_format = brief.get("chapter_format", "")
+    outline        = brief.get("chapter_3_outline", "")
 
     objectives_text = ""
     if objectives:
@@ -25,10 +22,29 @@ def get_chapter_3_prompt(brief: dict) -> str:
         for i, obj in enumerate(objectives, 1):
             objectives_text += f"{i}. {obj}\n"
 
+    outline_injection = ""
+    if outline:
+        outline_injection = f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STUDENT'S OUTLINE FOR THIS CHAPTER
+Follow this structure exactly. It takes priority over the standard sections below.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{outline}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+    format_injection = ""
+    if chapter_format:
+        format_injection = f"""
+UNIVERSITY-SPECIFIC FORMAT:
+{chapter_format}
+"""
+
     design_instructions = _get_design_instructions(research_type, department)
 
-    return f"""Write a complete, publication-quality Chapter 3 (Research Methodology) for this final year project:
-
+    return f"""Write a complete, publication-quality Chapter 3 (Research Methodology) for this final year project.
+{outline_injection}
+{format_injection}
 TOPIC: {topic}
 RESEARCH DESIGN: {research_type.upper()}
 POPULATION/SCOPE: {population}
@@ -39,120 +55,110 @@ CITATION STYLE: {citation_style.upper()}
 NIGERIAN CONTEXT: {nigerian_ctx}
 
 {objectives_text}
-
 {design_instructions}
 
-CHAPTER 3 MUST CONTAIN ALL OF THESE SECTIONS IN ORDER:
+STANDARD CHAPTER 3 SECTIONS (use if no outline provided above):
 
 3.1 INTRODUCTION
 - Brief paragraph introducing the chapter
-- State that this chapter describes the methods used to achieve the study objectives
+- State this chapter describes the methods used to achieve the study objectives
 
 3.2 RESEARCH DESIGN
-- Name and define the research design adopted ({research_type})
-- Cite at least 2 methodology authors who define/describe this design (e.g. Creswell, Kothari, Saunders, Bryman)
-- Justify why this design is appropriate for this specific study
-- Mention the philosophical underpinning (positivism for quantitative, interpretivism for qualitative)
+- Name and define the research design ({research_type})
+- Cite at least 2 methodology authors (Creswell, Kothari, Saunders, Bryman)
+- Justify why this design suits this specific study
+- Mention the philosophical underpinning (positivism/interpretivism)
 
 3.3 AREA OF STUDY
-- Describe the specific geographical area, institution, or organisation being studied
-- Include relevant background about the study area (population size, economic profile, why it was chosen)
-- Must reference specific Nigerian location from the student's scope: {population}
+- Describe the specific geographical area, institution, or organisation
+- Include relevant background (population size, economic profile, why chosen)
+- Must reference the specific Nigerian location: {population}
 
 3.4 POPULATION OF THE STUDY
 - Define the target population precisely
-- State the total population size with a source if available
-- Distinguish between target population and accessible population
+- State total population size with source if available
+- Distinguish target population from accessible population
 
 3.5 SAMPLE SIZE AND SAMPLING TECHNIQUE
-- Determine the sample size using an appropriate formula
-- For quantitative: use Taro Yamane formula or Cochran formula — show the calculation with actual numbers
-- For qualitative: justify purposive/snowball/theoretical sampling with reasoning
-- Name the sampling technique and justify its choice
+- Determine sample size using appropriate formula
+- Quantitative: use Taro Yamane or Cochran formula — show calculation with actual numbers
+- Qualitative: justify purposive/snowball/theoretical sampling
 - State the final sample size clearly
 
 3.6 INSTRUMENT FOR DATA COLLECTION
-- Describe the primary instrument (questionnaire, interview guide, observation checklist)
-- Describe the structure of the instrument (sections, number of items, scale used)
-- For questionnaires: specify the Likert scale used (e.g. 5-point: Strongly Agree to Strongly Disagree)
-- Justify why this instrument is appropriate for the research design
+- Describe the primary instrument
+- Describe structure (sections, number of items, scale used)
+- For questionnaires: specify Likert scale (e.g. 5-point: Strongly Agree to Strongly Disagree)
+- Justify why this instrument suits the research design
 
 3.7 VALIDITY OF THE INSTRUMENT
-- Explain how content validity was established (expert review, supervisor review)
+- Explain how content validity was established
 - Explain face validity if applicable
 - Mention construct validity for quantitative studies
-- State that the instrument was reviewed by the supervisor and relevant experts
 
 3.8 RELIABILITY OF THE INSTRUMENT
-- For quantitative: specify Cronbach's Alpha threshold (0.7 or above is acceptable)
-- State that a pilot study was conducted (specify sample size for pilot — typically 10–15% of main sample)
-- State the Cronbach's Alpha coefficient obtained from the pilot
-- For qualitative: discuss transferability, credibility, and dependability instead
+- Quantitative: Cronbach's Alpha threshold (0.7 or above)
+- State a pilot study was conducted (10-15% of main sample)
+- State the Cronbach's Alpha obtained
+- Qualitative: discuss trustworthiness (credibility, transferability, dependability, confirmability)
 
 3.9 METHOD OF DATA COLLECTION
-- Describe how the questionnaires/instruments were administered
-- State whether it was self-administered, online, or researcher-administered
-- Describe how respondents were reached in the Nigerian context
-- Mention any ethical considerations (anonymity, informed consent, voluntary participation)
+- Describe how instruments were administered
+- Describe how respondents were reached in Nigerian context
+- Mention ethical considerations (anonymity, informed consent, voluntary participation)
 
 3.10 METHOD OF DATA ANALYSIS
-- State the statistical tools to be used for each research question/hypothesis
-- For quantitative: specify tools like descriptive statistics (mean, frequency, percentage), inferential statistics (regression, correlation, chi-square, ANOVA, t-test) — match to the hypotheses
-- For qualitative: specify thematic analysis, content analysis, or narrative analysis
-- State the software to be used (SPSS version 23+, Microsoft Excel, or Atlas.ti for qualitative)
-- Explain how hypotheses will be tested (significance level: p < 0.05)
+- State statistical tools for each research question/hypothesis
+- Quantitative: descriptive statistics, inferential statistics matched to hypotheses
+- Qualitative: thematic analysis, content analysis, or narrative analysis
+- State software (SPSS v23+, Excel, or Atlas.ti)
+- Explain hypothesis testing (significance level: p < 0.05)
 
 3.11 ETHICAL CONSIDERATIONS
-- Informed consent from respondents
-- Confidentiality and anonymity
-- Voluntary participation
-- Data storage and privacy
-- Institutional approval if applicable
+- Informed consent, confidentiality, voluntary participation, data storage
 
 WRITING REQUIREMENTS:
 - Every methodological choice must be justified — not just described
-- Cite methodology authors for key decisions (Creswell, 2014; Kothari, 2004; Saunders et al., 2019)
-- The sampling calculation must show actual numbers — not just the formula
-- Be specific about the Nigerian context throughout
-- Minimum chapter length: 1,800 words
+- Cite methodology authors for key decisions
+- Sampling calculation must show actual numbers
+- Be specific about Nigerian context throughout
+- Minimum 1,800 words
 
 Write the full chapter now. Do not summarise or truncate any section."""
 
 
 def _get_design_instructions(research_type: str, department: str) -> str:
-    """Additional instructions based on research design and department."""
     research_type = (research_type or "quantitative").lower()
-    dept_lower = (department or "").lower()
+    dept_lower    = (department or "").lower()
 
     if research_type == "qualitative":
-        return """QUALITATIVE DESIGN SPECIFIC INSTRUCTIONS:
-- The instrument is an interview guide or focus group guide — not a questionnaire
-- Sample size is smaller (10–30 participants) and justified by saturation
+        return """QUALITATIVE DESIGN INSTRUCTIONS:
+- Instrument is an interview guide or focus group guide — not a questionnaire
+- Sample size is smaller (10-30 participants) justified by saturation
 - Data analysis uses thematic analysis — describe the 6-step Braun & Clarke process
-- Validity is discussed as trustworthiness (credibility, transferability, dependability, confirmability)
-- No statistical hypothesis testing — use research propositions instead"""
+- Validity discussed as trustworthiness
+- No statistical hypothesis testing — use research propositions"""
 
     if research_type == "mixed":
-        return """MIXED METHODS DESIGN SPECIFIC INSTRUCTIONS:
-- Explain whether the design is sequential exploratory, sequential explanatory, or concurrent triangulation
-- Describe both the quantitative and qualitative strands separately
+        return """MIXED METHODS DESIGN INSTRUCTIONS:
+- Explain whether design is sequential exploratory, explanatory, or concurrent triangulation
+- Describe both quantitative and qualitative strands separately
 - Explain how the two strands are integrated
-- Justify why a mixed approach is superior to either alone for this study"""
+- Justify why mixed approach is superior to either alone"""
 
     if any(d in dept_lower for d in ["account", "finance", "banking", "economics"]):
-        return """ACCOUNTING/FINANCE SPECIFIC INSTRUCTIONS:
+        return """ACCOUNTING/FINANCE INSTRUCTIONS:
 - Use ex-post facto or survey research design
-- For studies using secondary data: describe data sources (CBN annual reports, NSE data, company annual reports)
-- Specify panel data or time series analysis if applicable
-- Hypotheses must be tested with regression analysis or correlation
-- Specify OLS regression or Pearson correlation as appropriate"""
+- For secondary data: describe sources (CBN annual reports, NSE data, company reports)
+- Specify panel data or time series if applicable
+- Hypotheses tested with regression or correlation
+- Specify OLS regression or Pearson correlation"""
 
     if any(d in dept_lower for d in ["computer", "software", "engineering", "technology"]):
-        return """ENGINEERING/CS SPECIFIC INSTRUCTIONS:
-- Describe the system development methodology if applicable (Agile, Waterfall, SDLC)
-- For experimental designs: describe the experimental setup and control variables
-- For survey-based CS research: follow standard quantitative methodology
-- If building a system: describe the development tools, programming languages, and testing methodology"""
+        return """ENGINEERING/CS INSTRUCTIONS:
+- Describe system development methodology if applicable (Agile, Waterfall, SDLC)
+- For experimental designs: describe setup and control variables
+- If building a system: describe development tools, programming languages, testing methodology"""
 
     return ""
 

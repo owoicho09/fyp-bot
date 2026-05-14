@@ -290,6 +290,8 @@ def extract_brief_from_context(user_data: dict) -> dict:
         "supervisor_context":user_data.get("supervisor_context", ""),
         "nigerian_context":  user_data.get("nigerian_context", ""),
         "student_background":user_data.get("student_background", ""),
+        "citation_year_from": user_data.get("citation_year_from", 2019),
+        "chapter_format": user_data.get("chapter_format", ""),
     }
 
 
@@ -333,3 +335,4 @@ Student background: {brief.get('student_background', 'None provided')}
 
 
 print("[helpers.py] All helper utilities loaded.")
+

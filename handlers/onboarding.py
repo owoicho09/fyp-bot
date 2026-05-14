@@ -18,7 +18,7 @@ from services.whisper_service import (
 from utils.keyboards import (
     level_keyboard, faculty_keyboard,
     confirm_brief_keyboard, resume_keyboard,
-    skip_keyboard,
+    skip_keyboard, citation_year_keyboard,
 )
 from utils.helpers import (
     format_project_brief, extract_brief_from_context,
@@ -44,8 +44,9 @@ from utils.constants import (
     DISCLAIMER_FACULTIES,
 )
 
-# We add one extra state for the chapter format question
-ASK_CHAPTER_FORMAT = 30
+# Extra onboarding states
+ASK_CHAPTER_FORMAT  = 30
+ASK_CITATION_YEAR   = 31
 
 
 # ─── /start ───────────────────────────────────────────────────────────────────
@@ -183,24 +184,89 @@ async def handle_university(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     except Exception as e:
         print(f"[onboarding] update_user university error: {e}")
 
-    # Ask about chapter format — this is the key differentiator
+    # Ask citation year range
     await update.message.reply_text(
-        "One quick question before your topic.\n\n"
-        "Does your department or university specify *exact chapter headings or section names* "
-        "for your project format?\n\n"
-        "For example, some schools use:\n"
+        "📚 *Citation year range*\n\n"
+        "What year range should your references cover?\n\n"
+        "By default I use the *last 5 years* which most supervisors prefer "
+        "for current and relevant literature.\n\n"
+        "Choose below or type a custom range like _2015–2025_:",
+        parse_mode="Markdown",
+        reply_markup=citation_year_keyboard(),
+    )
+    return ASK_CITATION_YEAR
+
+
+# ─── STEP 5: Citation year range ─────────────────────────────────────────────
+
+async def handle_citation_year_button(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Student tapped one of the preset citation year buttons."""
+    query   = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data    = query.data  # e.g. "cite_year_2019" or "cite_year_any"
+    print(f"[onboarding] Citation year button: {data} | user={user_id}")
+
+    if data == "cite_year_any":
+        year_from = 1990
+    else:
+        try:
+            year_from = int(data.replace("cite_year_", ""))
+        except ValueError:
+            year_from = 2019
+
+    context.user_data["citation_year_from"] = year_from
+    print(f"[onboarding] Citation year from: {year_from}")
+
+    await query.edit_message_text(
+        f"✅ Citations from *{year_from if year_from > 1990 else 'any year'}* onwards.\n\n"
+        "Now, does your department or university specify *exact chapter headings* "
+        "or section names for your project format?\n\n"
+        "For example:\n"
         "• _'Materials and Methods'_ instead of _'Research Methodology'_\n"
-        "• _'Results and Interpretation'_ instead of _'Data Presentation'_\n"
-        "• _'Justification of Study'_ instead of _'Significance of Study'_\n\n"
-        "If your school gave you a specific format, type the section names here. "
-        "If you are not sure or your school uses the standard format, tap *Skip*:",
+        "• _'Results and Interpretation'_ instead of _'Data Presentation'_\n\n"
+        "Paste your school's format below, or tap *Skip* if you are not sure:",
         parse_mode="Markdown",
         reply_markup=skip_keyboard("skip_chapter_format"),
     )
     return ASK_CHAPTER_FORMAT
 
 
-# ─── STEP 5: Chapter format (optional) ───────────────────────────────────────
+async def handle_citation_year_text(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """Student typed a custom citation year range like '2015-2025'."""
+    text    = update.message.text.strip()
+    user_id = update.effective_user.id
+    print(f"[onboarding] Citation year text: '{text}' | user={user_id}")
+
+    # Extract the earliest year from whatever they typed
+    import re
+    years = re.findall(r"\b(19|20)\d{2}\b", text)
+    if years:
+        year_from = int(min(years))
+    elif "any" in text.lower() or "all" in text.lower():
+        year_from = 1990
+    else:
+        year_from = 2019  # default
+
+    context.user_data["citation_year_from"] = year_from
+    print(f"[onboarding] Citation year from text: {year_from}")
+
+    await update.message.reply_text(
+        f"✅ Citations from *{year_from if year_from > 1990 else 'any year'}* onwards.\n\n"
+        "Now, does your department or university specify *exact chapter headings* "
+        "or section names for your project format?\n\n"
+        "Paste your school's format below, or tap *Skip*:",
+        parse_mode="Markdown",
+        reply_markup=skip_keyboard("skip_chapter_format"),
+    )
+    return ASK_CHAPTER_FORMAT
+
+
+# ─── STEP 6: Chapter format (optional) ───────────────────────────────────────
 
 async def handle_chapter_format_text(
     update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -211,7 +277,7 @@ async def handle_chapter_format_text(
 
     if text.lower() not in ("skip", "s", "no", "none", ""):
         context.user_data["chapter_format"] = text
-        print(f"[onboarding] Chapter format saved: {text[:100]}")
+        print(f"[onboarding] Chapter format saved.")
 
     await update.message.reply_text(
         get_topic_opening_message(),
@@ -234,7 +300,7 @@ async def handle_chapter_format_skip(
     return ASK_TOPIC_OPEN
 
 
-# ─── STEP 6: Topic (text or voice) ───────────────────────────────────────────
+# ─── STEP 7: Topic (text or voice) ───────────────────────────────────────────
 
 async def handle_topic_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text    = update.message.text.strip()
@@ -248,11 +314,15 @@ async def handle_topic_text(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return ASK_TOPIC_OPEN
 
     if is_topic_too_short(text):
-        await update.message.reply_text(get_topic_too_short_message(), parse_mode="Markdown")
+        await update.message.reply_text(
+            get_topic_too_short_message(), parse_mode="Markdown"
+        )
         return ASK_TOPIC_OPEN
 
     if looks_like_question(text):
-        await update.message.reply_text(get_topic_looks_like_question_message(), parse_mode="Markdown")
+        await update.message.reply_text(
+            get_topic_looks_like_question_message(), parse_mode="Markdown"
+        )
         return ASK_TOPIC_OPEN
 
     return await _process_topic(update, context, text)
@@ -263,10 +333,14 @@ async def handle_topic_voice(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user_id = update.effective_user.id
     print(f"[onboarding] Topic voice: {voice.duration}s | user={user_id}")
 
-    processing_msg = await update.message.reply_text(get_voice_note_processing_message())
+    processing_msg = await update.message.reply_text(
+        get_voice_note_processing_message()
+    )
 
     try:
-        result = await transcribe_voice_message(bot=context.bot, file_id=voice.file_id)
+        result = await transcribe_voice_message(
+            bot=context.bot, file_id=voice.file_id
+        )
     except Exception as e:
         print(f"[onboarding] voice error: {e}")
         await processing_msg.edit_text(get_voice_note_error_message())
@@ -289,12 +363,6 @@ async def _process_topic(
     context: ContextTypes.DEFAULT_TYPE,
     text: str,
 ) -> int:
-    """
-    Run the intake agent on the topic message.
-    If Claude has enough → go to brief.
-    If it needs one thing → ask one follow-up then confirm.
-    Never more than one follow-up.
-    """
     user_id = update.effective_user.id
     print(f"[onboarding] _process_topic: '{text[:80]}'")
 
@@ -302,11 +370,11 @@ async def _process_topic(
     history.append({"role": "user", "content": text})
 
     student_context = {
-        "academic_level":  context.user_data.get("academic_level", ""),
-        "faculty":         context.user_data.get("faculty", ""),
-        "department":      context.user_data.get("department", ""),
-        "university":      context.user_data.get("university", ""),
-        "chapter_format":  context.user_data.get("chapter_format", ""),
+        "academic_level": context.user_data.get("academic_level", ""),
+        "faculty":        context.user_data.get("faculty", ""),
+        "department":     context.user_data.get("department", ""),
+        "university":     context.user_data.get("university", ""),
+        "chapter_format": context.user_data.get("chapter_format", ""),
     }
 
     try:
@@ -316,14 +384,12 @@ async def _process_topic(
         context.user_data["topic"] = text
         return await _show_brief(update, context)
 
-    # Merge extracted fields — never overwrite with empty values
     extracted = result.get("extracted", {})
     for key, value in extracted.items():
         if value is not None and value != "":
             context.user_data[key] = value
             print(f"[onboarding] Extracted: {key} = {str(value)[:60]}")
 
-    # Always preserve the raw topic if nothing extracted
     if not context.user_data.get("topic"):
         context.user_data["topic"] = text
 
@@ -331,12 +397,10 @@ async def _process_topic(
     history.append({"role": "assistant", "content": reply})
     context.user_data["conversation_history"] = history
 
-    # Claude has enough — go straight to brief
     if result.get("brief_complete"):
         print(f"[onboarding] Brief complete — going to confirmation")
         return await _show_brief(update, context)
 
-    # Ask ONE follow-up
     if reply:
         await update.message.reply_text(
             reply,
@@ -348,12 +412,12 @@ async def _process_topic(
     return await _show_brief(update, context)
 
 
-# ─── STEP 7: ONE follow-up ────────────────────────────────────────────────────
+# ─── STEP 8: ONE follow-up ────────────────────────────────────────────────────
 
 async def handle_followup_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text    = update.message.text.strip()
     user_id = update.effective_user.id
-    print(f"[onboarding] Followup text: '{text[:80]}' | user={user_id}")
+    print(f"[onboarding] Followup: '{text[:80]}' | user={user_id}")
 
     if text.lower() in ("skip", "s"):
         return await _show_brief(update, context)
@@ -366,10 +430,14 @@ async def handle_followup_voice(update: Update, context: ContextTypes.DEFAULT_TY
     user_id = update.effective_user.id
     print(f"[onboarding] Followup voice: {voice.duration}s | user={user_id}")
 
-    processing_msg = await update.message.reply_text(get_voice_note_processing_message())
+    processing_msg = await update.message.reply_text(
+        get_voice_note_processing_message()
+    )
 
     try:
-        result = await transcribe_voice_message(bot=context.bot, file_id=voice.file_id)
+        result = await transcribe_voice_message(
+            bot=context.bot, file_id=voice.file_id
+        )
     except Exception as e:
         print(f"[onboarding] followup voice error: {e}")
         await processing_msg.edit_text(get_voice_note_error_message())
@@ -399,10 +467,6 @@ async def _process_followup(
     context: ContextTypes.DEFAULT_TYPE,
     text: str,
 ) -> int:
-    """
-    Process the one follow-up answer.
-    Extract anything useful then go straight to brief — no more questions ever.
-    """
     user_id = update.effective_user.id
     print(f"[onboarding] _process_followup: '{text[:80]}'")
 
@@ -417,8 +481,7 @@ async def _process_followup(
 
     try:
         result = await run_intake_agent(history, student_context)
-        extracted = result.get("extracted", {})
-        for key, value in extracted.items():
+        for key, value in result.get("extracted", {}).items():
             if value is not None and value != "":
                 context.user_data[key] = value
                 print(f"[onboarding] Followup extracted: {key} = {str(value)[:60]}")
@@ -427,7 +490,6 @@ async def _process_followup(
     except Exception as e:
         print(f"[onboarding] _process_followup error: {e}")
 
-    # Always proceed to brief after one follow-up — no exceptions
     return await _show_brief(update, context)
 
 
@@ -438,11 +500,6 @@ async def _show_brief(
     context: ContextTypes.DEFAULT_TYPE,
     message=None,
 ) -> int:
-    """
-    Show the assembled project brief for confirmation.
-    No validation. No rejection. Show what we have and let them confirm.
-    The student's supervisor will validate the topic — not us.
-    """
     print("[onboarding] _show_brief")
     user_id    = update.effective_user.id if update.effective_user else None
     msg_target = message or update.message
@@ -554,6 +611,10 @@ def get_onboarding_handler() -> ConversationHandler:
             ],
             ASK_UNIVERSITY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_university),
+            ],
+            ASK_CITATION_YEAR: [
+                CallbackQueryHandler(handle_citation_year_button, pattern="^cite_year_"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_citation_year_text),
             ],
             ASK_CHAPTER_FORMAT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_chapter_format_text),
