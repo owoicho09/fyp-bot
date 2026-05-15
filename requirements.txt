@@ -7,4 +7,4 @@ supabase
 httpx
 python-dotenv
 reportlab
-aiofiles
+aiofilespython-docx

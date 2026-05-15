@@ -610,7 +610,7 @@ async def handle_download_pdf(
     user_id = query.from_user.id
     print(f"[chapters] handle_download_pdf user={user_id}")
 
-    await query.message.reply_text("Generating your PDF... ⏳")
+    await query.message.reply_text("Generating your Word document... ⏳")
 
     project = get_active_project(user_id)
     if not project:
@@ -618,7 +618,7 @@ async def handle_download_pdf(
         return
 
     try:
-        from services.pdf_service import generate_project_pdf
+        from services.docx_service import generate_project_docx
 
         user = get_user(user_id)
         if user:
@@ -627,29 +627,30 @@ async def handle_download_pdf(
             project["academic_level"] = project.get("academic_level") or user.get("academic_level", "bsc")
             project["faculty"]        = project.get("faculty")        or user.get("faculty", "")
 
-        pdf_buffer    = generate_project_pdf(project, user)
+        docx_buffer   = generate_project_docx(project, user)
         chapters_done = project.get("chapters_completed", 0)
         topic_slug    = project.get("topic", "project")[:30].replace(" ", "_")
+        filename      = f"FYP_Mentor_{topic_slug}_Ch1-{chapters_done}.docx"
 
         await context.bot.send_document(
             chat_id=query.message.chat_id,
-            document=pdf_buffer,
-            filename=f"FYP_Mentor_{topic_slug}_Ch1-{chapters_done}.pdf",
+            document=docx_buffer,
+            filename=filename,
             caption=(
-                f"📄 *Your project PDF* — Chapters 1–{chapters_done}\n\n"
-                "Read through, edit in your own voice, and review with "
-                "your supervisor before submission."
+                f"📄 *Your project Word document* — Chapters 1–{chapters_done}\n\n"
+                "Open in Microsoft Word or Google Docs to edit. "
+                "Read through, add your own voice, and review with your supervisor "
+                "before submission."
             ),
             parse_mode="Markdown",
         )
-        print(f"[chapters] PDF sent to user {user_id}")
+        print(f"[chapters] DOCX sent to user {user_id}")
 
     except Exception as e:
-        print(f"[chapters] PDF error: {e}")
+        print(f"[chapters] DOCX error: {e}")
         await query.message.reply_text(
-            "PDF generation failed. Your chapters are saved — try again in a moment."
+            "Document generation failed. Your chapters are saved — try again in a moment."
         )
-
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 

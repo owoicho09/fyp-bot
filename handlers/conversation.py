@@ -394,30 +394,30 @@ async def _send_pdf(
     user: dict,
 ) -> None:
     try:
-        from services.pdf_service import generate_project_pdf
+        from services.docx_service import generate_project_docx
         if user:
             project["university"]     = project.get("university")     or user.get("university", "")
             project["department"]     = project.get("department")     or user.get("department", "")
             project["academic_level"] = project.get("academic_level") or user.get("academic_level", "bsc")
             project["faculty"]        = project.get("faculty")        or user.get("faculty", "")
 
-        pdf_buffer    = generate_project_pdf(project, user)
+        docx_buffer   = generate_project_docx(project, user)
         chapters_done = project.get("chapters_completed", 0)
         topic_slug    = project.get("topic", "project")[:25].replace(" ", "_")
 
         await context.bot.send_document(
             chat_id=update.effective_chat.id,
-            document=pdf_buffer,
-            filename=f"FYP_{topic_slug}.pdf",
-            caption=f"📄 Your project PDF — Chapters 1–{chapters_done}",
+            document=docx_buffer,
+            filename=f"FYP_{topic_slug}.docx",
+            caption=f"📄 Your project Word document — Chapters 1–{chapters_done}",
         )
     except Exception as e:
-        print(f"[conversation] _send_pdf error: {e}")
+        print(f"[conversation] DOCX send error: {e}")
         await update.message.reply_text(
-            "PDF generation failed. Try again in a moment."
+            "Document generation failed. Try again in a moment."
         )
 
-
+# ─── REGISTRATION ─────────────────────────────────────────────────────────────
 # ─── REGISTRATION ─────────────────────────────────────────────────────────────
 
 def register_conversation_handler(application) -> None:
