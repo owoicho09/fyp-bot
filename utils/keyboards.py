@@ -183,15 +183,11 @@ def payment_plans_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
-def payment_link_keyboard(url: str) -> InlineKeyboardMarkup:
-    print("[keyboards] payment_link_keyboard")
-    buttons = []
-    if url:
-        buttons.append([InlineKeyboardButton("💳 Pay now (Paystack)", url=url)])
-    buttons.append([InlineKeyboardButton(
-        "✅ I've paid — check status", callback_data="check_payment",
-    )])
-    return InlineKeyboardMarkup(buttons)
+def payment_link_keyboard(url: str = "") -> InlineKeyboardMarkup:
+    """Legacy — kept for compatibility. Now just shows subscribe button."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("💳 Subscribe", callback_data="show_plans")
+    ]])
 
 
 # ─── RETURNING USER ───────────────────────────────────────────────────────────
