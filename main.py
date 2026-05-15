@@ -1,9 +1,9 @@
 print("[main.py] Starting FYP Mentor bot...")
 
 import asyncio
-import json
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
+from config import IS_PROD, WEBHOOK_URL, TELEGRAM_BOT_TOKEN, PORT
 from bot.bot import build_application
 
 
@@ -16,7 +16,6 @@ ptb_app = build_application()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start and stop the PTB bot alongside FastAPI."""
     print("[main.py] FastAPI lifespan startup...")
     await ptb_app.initialize()
 
@@ -24,16 +23,23 @@ async def lifespan(app: FastAPI):
         webhook_url = f"{WEBHOOK_URL}/webhook/{TELEGRAM_BOT_TOKEN}"
         await ptb_app.bot.set_webhook(
             url=webhook_url,
-            allowed_updates=["message", "callback_query"],
+            allowed_updates=[
+                "message",
+                "callback_query",
+                "pre_checkout_query",
+            ],
         )
         print(f"[main.py] Webhook set: {webhook_url}")
     else:
-        # Development — use polling
         print("[main.py] Development mode — starting polling...")
         await ptb_app.bot.delete_webhook(drop_pending_updates=True)
         await ptb_app.start()
         asyncio.create_task(ptb_app.updater.start_polling(
-            allowed_updates=["message", "callback_query"],
+            allowed_updates=[
+                "message",
+                "callback_query",
+                "pre_checkout_query",
+            ],
             drop_pending_updates=True,
         ))
         print("[main.py] Polling started.")
@@ -49,20 +55,16 @@ async def lifespan(app: FastAPI):
 
 # ─── FASTAPI APP ──────────────────────────────────────────────────────────────
 
-app = FastAPI(
-    title="FYP Mentor Bot",
-    lifespan=lifespan,
-)
+app = FastAPI(title="FYP Mentor Bot", lifespan=lifespan)
 
 
-# ─── TELEGRAM WEBHOOK ENDPOINT ────────────────────────────────────────────────
+# ─── TELEGRAM WEBHOOK ─────────────────────────────────────────────────────────
 
 @app.post(f"/webhook/{TELEGRAM_BOT_TOKEN}")
 async def telegram_webhook(request: Request):
-    """Receive Telegram updates in production."""
     print("[main.py] Telegram webhook received")
     try:
-        data = await request.json()
+        data   = await request.json()
         from telegram import Update
         update = Update.de_json(data, ptb_app.bot)
         await ptb_app.process_update(update)
@@ -70,9 +72,6 @@ async def telegram_webhook(request: Request):
     except Exception as e:
         print(f"[main.py] Telegram webhook error: {e}")
         return Response(status_code=500)
-
-
-# ─── PAYSTACK WEBHOOK ENDPOINT ────────────────────────────────────────────────
 
 
 # ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
