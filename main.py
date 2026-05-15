@@ -5,10 +5,7 @@ import json
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from bot.bot import build_application
-from config import (
-    WEBHOOK_URL, PORT, IS_PROD,
-    TELEGRAM_BOT_TOKEN, PAYSTACK_WEBHOOK_SECRET,
-)
+
 
 # ─── BUILD PTB APPLICATION ────────────────────────────────────────────────────
 print("[main.py] Building bot application...")
@@ -76,25 +73,6 @@ async def telegram_webhook(request: Request):
 
 
 # ─── PAYSTACK WEBHOOK ENDPOINT ────────────────────────────────────────────────
-
-@app.post("/webhook/paystack")
-async def paystack_webhook(request: Request):
-    """Receive Paystack payment events."""
-    print("[main.py] Paystack webhook received")
-    try:
-        payload   = await request.body()
-        signature = request.headers.get("x-paystack-signature", "")
-
-        from handlers.payments import process_paystack_webhook
-        success = await process_paystack_webhook(
-            payload=payload,
-            signature=signature,
-            bot=ptb_app.bot,
-        )
-        return Response(status_code=200 if success else 400)
-    except Exception as e:
-        print(f"[main.py] Paystack webhook error: {e}")
-        return Response(status_code=500)
 
 
 # ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
