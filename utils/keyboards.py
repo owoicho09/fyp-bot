@@ -73,14 +73,14 @@ def citation_keyboard() -> InlineKeyboardMarkup:
 def turnitin_keyboard() -> InlineKeyboardMarkup:
     print("[keyboards] turnitin_keyboard")
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Yes, we use Turnitin",  callback_data="turnitin_yes")],
-        [InlineKeyboardButton("No / Not sure",         callback_data="turnitin_no")],
+        [InlineKeyboardButton("Yes, we use Turnitin", callback_data="turnitin_yes")],
+        [InlineKeyboardButton("No / Not sure",        callback_data="turnitin_no")],
     ])
 
 
 def skip_keyboard(callback_data: str = "skip") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("Skip", callback_data=callback_data)
+        InlineKeyboardButton("Skip ➡️", callback_data=callback_data)
     ]])
 
 
@@ -89,10 +89,10 @@ def confirm_brief_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
             "✅ Generate Chapter 1: Introduction",
-            callback_data="gen_chapter_1"
+            callback_data="gen_chapter_1",
         )],
-        [InlineKeyboardButton("✏️ Change my topic",   callback_data="change_topic")],
-        [InlineKeyboardButton("🔄 Start over",         callback_data="restart")],
+        [InlineKeyboardButton("✏️ Change my topic", callback_data="change_topic")],
+        [InlineKeyboardButton("🔄 Start over",       callback_data="restart")],
     ])
 
 
@@ -103,10 +103,13 @@ def next_chapter_keyboard(next_chapter: int) -> InlineKeyboardMarkup:
     name = CHAPTER_NAMES.get(next_chapter, f"Chapter {next_chapter}")
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
-            f"Generate Chapter {next_chapter}: {name}",
+            f"📖 Generate Chapter {next_chapter}: {name}",
             callback_data=f"gen_chapter_{next_chapter}",
         )],
-        [InlineKeyboardButton("📄 Download PDF so far", callback_data="download_pdf")],
+        [InlineKeyboardButton(
+            "📄 Download Word document so far",
+            callback_data="download_pdf",
+        )],
     ])
 
 
@@ -131,18 +134,39 @@ def chapter_outline_keyboard(chapter_number: int) -> InlineKeyboardMarkup:
 def chapter_4_gate_keyboard() -> InlineKeyboardMarkup:
     print("[keyboards] chapter_4_gate_keyboard")
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Yes, I have my data ready",         callback_data="ch4_has_data")],
-        [InlineKeyboardButton("📝 Generate questionnaire for me",     callback_data="ch4_gen_questionnaire")],
-        [InlineKeyboardButton("📊 Give me a data entry template",     callback_data="ch4_gen_template")],
-        [InlineKeyboardButton("❓ How do I administer the survey?",   callback_data="ch4_explain_survey")],
+        [InlineKeyboardButton(
+            "✅ Yes, I have my data ready",
+            callback_data="ch4_has_data",
+        )],
+        [InlineKeyboardButton(
+            "📝 Generate questionnaire for me",
+            callback_data="ch4_gen_questionnaire",
+        )],
+        [InlineKeyboardButton(
+            "📊 Give me a data entry template",
+            callback_data="ch4_gen_template",
+        )],
+        [InlineKeyboardButton(
+            "❓ How do I administer the survey?",
+            callback_data="ch4_explain_survey",
+        )],
     ])
 
 
-def download_pdf_keyboard() -> InlineKeyboardMarkup:
-    print("[keyboards] download_pdf_keyboard")
+def download_keyboard() -> InlineKeyboardMarkup:
+    """Download button — sends .docx Word document."""
+    print("[keyboards] download_keyboard")
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("📥 Download Full Project PDF", callback_data="download_pdf")
+        InlineKeyboardButton(
+            "📄 Download Project (.docx)",
+            callback_data="download_pdf",
+        )
     ]])
+
+
+# Keep this name so existing code that imports download_pdf_keyboard still works
+def download_pdf_keyboard() -> InlineKeyboardMarkup:
+    return download_keyboard()
 
 
 # ─── PAYMENT KEYBOARDS ────────────────────────────────────────────────────────
@@ -154,7 +178,7 @@ def payment_plans_keyboard() -> InlineKeyboardMarkup:
         for key, plan in PLANS.items()
     ]
     buttons.append([InlineKeyboardButton(
-        "🔍 Check my payment status", callback_data="check_payment"
+        "🔍 Check my payment status", callback_data="check_payment",
     )])
     return InlineKeyboardMarkup(buttons)
 
@@ -165,7 +189,7 @@ def payment_link_keyboard(url: str) -> InlineKeyboardMarkup:
     if url:
         buttons.append([InlineKeyboardButton("💳 Pay now (Paystack)", url=url)])
     buttons.append([InlineKeyboardButton(
-        "✅ I've paid — check status", callback_data="check_payment"
+        "✅ I've paid — check status", callback_data="check_payment",
     )])
     return InlineKeyboardMarkup(buttons)
 
@@ -179,11 +203,17 @@ def resume_keyboard(chapters_done: int) -> InlineKeyboardMarkup:
     if next_ch <= 5:
         name = CHAPTER_NAMES.get(next_ch, f"Chapter {next_ch}")
         buttons.append([InlineKeyboardButton(
-            f"Continue — Chapter {next_ch}: {name}",
+            f"📖 Continue — Chapter {next_ch}: {name}",
             callback_data=f"gen_chapter_{next_ch}",
         )])
-    buttons.append([InlineKeyboardButton("📄 Download PDF so far", callback_data="download_pdf")])
-    buttons.append([InlineKeyboardButton("🆕 Start a new project",  callback_data="restart")])
+    buttons.append([InlineKeyboardButton(
+        "📄 Download Word document so far",
+        callback_data="download_pdf",
+    )])
+    buttons.append([InlineKeyboardButton(
+        "🆕 Start a new project",
+        callback_data="restart",
+    )])
     return InlineKeyboardMarkup(buttons)
 
 
