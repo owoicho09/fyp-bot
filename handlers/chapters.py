@@ -36,10 +36,9 @@ from utils.constants import CHAPTER_NAMES, FREE_CHAPTERS, PAID_CHAPTERS
 # ─── ENTRY POINT FROM ONBOARDING ─────────────────────────────────────────────
 
 async def generate_chapter_1(query, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Called directly from onboarding after brief is confirmed."""
+    """Called directly from onboarding — no outline prompt for Chapter 1."""
     print(f"[chapters] generate_chapter_1 from onboarding")
     user_id = query.from_user.id
-    # Chapter 1 from onboarding skips the outline prompt — goes straight to generation
     await _generate_and_deliver_chapter(
         user_id=user_id,
         chapter_number=1,
@@ -53,6 +52,11 @@ async def generate_chapter_1(query, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def handle_generate_chapter(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
+    """
+    Student tapped a 'Generate Chapter N' button.
+    Always shows the outline prompt first.
+    Generation only happens via no_outline_N or has_outline_N callbacks.
+    """
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
@@ -65,7 +69,7 @@ async def handle_generate_chapter(
     chapter_number = int(match.group(1))
     print(f"[chapters] gen_chapter_{chapter_number}: user={user_id}")
 
-    # Paywall
+    # Paywall check
     if chapter_number in PAID_CHAPTERS:
         if not is_subscribed(user_id):
             print(f"[chapters] Paywall ch{chapter_number} user={user_id}")
@@ -91,39 +95,23 @@ async def handle_generate_chapter(
             )
             return
 
-    # Offer outline option — only once per chapter
-    outline_key = f"outline_offered_{chapter_number}"
-    if not context.user_data.get(outline_key):
-        context.user_data[outline_key] = True
-        ch_name = CHAPTER_NAMES.get(chapter_number, f"Chapter {chapter_number}")
-        try:
-            await query.edit_message_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-        await query.message.reply_text(
-            f"📖 *Chapter {chapter_number}: {ch_name}*\n\n"
-            f"Do you have a specific outline or instructions you want me to follow "
-            f"for this chapter?\n\n"
-            f"You can drop:\n"
-            f"• Your supervisor's chapter outline\n"
-            f"• Specific section headings your school requires\n"
-            f"• Any particular angle or focus for this chapter\n\n"
-            f"Or just generate with the standard format:",
-            parse_mode="Markdown",
-            reply_markup=chapter_outline_keyboard(chapter_number),
-        )
-        return
-
-    # Outline already offered — proceed to generation
+    # Always show outline prompt — generation happens via the outline buttons
+    ch_name = CHAPTER_NAMES.get(chapter_number, f"Chapter {chapter_number}")
     try:
         await query.edit_message_reply_markup(reply_markup=None)
     except Exception:
         pass
-    await _generate_and_deliver_chapter(
-        user_id=user_id,
-        chapter_number=chapter_number,
-        context=context,
-        send_target=query.message,
+
+    await query.message.reply_text(
+        f"📖 *Chapter {chapter_number}: {ch_name}*\n\n"
+        f"Do you have a specific outline or instructions for this chapter?\n\n"
+        f"You can drop:\n"
+        f"• Your supervisor's chapter outline\n"
+        f"• Specific section headings your school requires\n"
+        f"• Any particular angle or focus for this chapter\n\n"
+        f"Or generate with the standard Nigerian university format:",
+        parse_mode="Markdown",
+        reply_markup=chapter_outline_keyboard(chapter_number),
     )
 
 
@@ -132,7 +120,7 @@ async def handle_generate_chapter(
 async def handle_has_outline(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Student tapped 'I have an outline'."""
+    """Student tapped 'I have an outline' — ask them to paste it."""
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
@@ -162,7 +150,7 @@ async def handle_has_outline(
 async def handle_no_outline(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Student tapped 'Generate with standard format'."""
+    """Student tapped 'Generate with standard format' — go straight to generation."""
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
@@ -205,7 +193,6 @@ async def handle_outline_input(
         )
         return
 
-    # Save to Supabase
     try:
         update_project(user_id, {f"chapter_{chapter_number}_outline": outline_text})
         print(f"[chapters] Outline saved ch{chapter_number}")
@@ -241,24 +228,35 @@ async def handle_outline_voice(
     voice   = update.message.voice
     print(f"[chapters] Outline voice ch{chapter_number} user={user_id}: {voice.duration}s")
 
-    from services.whisper_service import transcribe_voice_message, build_voice_received_message
-    processing_msg = await update.message.reply_text(build_voice_received_message(voice.duration))
+    from services.whisper_service import (
+        transcribe_voice_message, build_voice_received_message
+    )
+    processing_msg = await update.message.reply_text(
+        build_voice_received_message(voice.duration)
+    )
 
     try:
-        result = await transcribe_voice_message(bot=update.get_bot(), file_id=voice.file_id)
+        result = await transcribe_voice_message(
+            bot=context.bot, file_id=voice.file_id
+        )
     except Exception as e:
-        print(f"[chapters] Outline voice transcription error: {e}")
-        await processing_msg.edit_text("Could not transcribe. Please type your outline instead.")
+        print(f"[chapters] Outline voice error: {e}")
+        await processing_msg.edit_text(
+            "Could not transcribe. Please type your outline instead."
+        )
         return
 
     if not result["success"]:
-        await processing_msg.edit_text("Could not transcribe. Please type your outline instead.")
+        await processing_msg.edit_text(
+            "Could not transcribe. Please type your outline instead."
+        )
         return
 
     outline_text = result["transcript"]
-    await processing_msg.edit_text(f"🎙️ Got it: _{outline_text[:200]}_", parse_mode="Markdown")
+    await processing_msg.edit_text(
+        f"🎙️ Got it: _{outline_text[:200]}_", parse_mode="Markdown"
+    )
 
-    # Save to Supabase
     try:
         update_project(user_id, {f"chapter_{chapter_number}_outline": outline_text})
     except Exception as e:
@@ -310,13 +308,12 @@ async def _generate_and_deliver_chapter(
     # Live Nigerian stats
     live_stats = {}
     try:
-        print(f"[chapters] Fetching Nigerian stats ch{chapter_number}...")
         live_stats = await search_nigerian_stats(brief.get("topic", ""))
         print(f"[chapters] Stats: {len(live_stats)} indicators")
     except Exception as e:
         print(f"[chapters] Stats fetch error (non-fatal): {e}")
 
-    # Citation pipeline (Chapter 2 only)
+    # Citation pipeline — Chapter 2 only
     citations = []
     if chapter_number == 2:
         citations = await _run_citation_pipeline(
@@ -329,7 +326,7 @@ async def _generate_and_deliver_chapter(
     # Previous chapters for consistency
     previous_chapters = _load_previous_chapters(project, chapter_number)
 
-    # Generate
+    # Generate via Claude
     try:
         await status_msg.edit_text(
             f"✍️ Writing Chapter {chapter_number}: {chapter_name}..."
@@ -349,7 +346,7 @@ async def _generate_and_deliver_chapter(
         )
         return
 
-    # Extract objectives from Chapter 1
+    # Extract objectives/hypotheses from Chapter 1
     if chapter_number == 1:
         _extract_and_save_chapter_1_data(user_id, content)
         content = _strip_extracted_data_block(content)
@@ -359,7 +356,7 @@ async def _generate_and_deliver_chapter(
     if is_complete:
         content = content.replace("<!--PROJECT_COMPLETE-->", "").strip()
 
-    # Save
+    # Save to Supabase
     save_chapter_content(user_id, chapter_number, content)
     print(f"[chapters] Chapter {chapter_number} saved.")
 
@@ -368,7 +365,7 @@ async def _generate_and_deliver_chapter(
     except Exception:
         pass
 
-    # Deliver
+    # Deliver to student
     await send_target.reply_text(
         format_chapter_intro(chapter_number, brief.get("topic", "")),
         parse_mode="Markdown",
@@ -386,7 +383,7 @@ async def _generate_and_deliver_chapter(
         parse_mode="Markdown",
     )
 
-    # Next step
+    # Next step buttons
     if is_complete or chapter_number == 5:
         await send_target.reply_text(
             format_completion_message(brief.get("topic", "")),
@@ -403,7 +400,7 @@ async def _generate_and_deliver_chapter(
         next_ch = chapter_number + 1
         await send_target.reply_text(
             f"✅ *Chapter {chapter_number}* is ready!\n\n"
-            f"Tap below when you're ready for the next chapter.",
+            f"Tap below when you're ready for Chapter {next_ch}.",
             parse_mode="Markdown",
             reply_markup=next_chapter_keyboard(next_ch),
         )
@@ -469,9 +466,9 @@ async def handle_ch4_has_data(
         "Great! Please send me your data now.\n\n"
         "You can paste:\n"
         "• A table (copy from Excel/Google Sheets)\n"
-        "• A summary of your responses (e.g. '120 respondents, 65% female...')\n"
+        "• A summary of responses (e.g. '120 respondents, 65% female...')\n"
         "• Raw frequency counts per question\n\n"
-        "The more detail, the better the analysis:"
+        "The more detail the better:"
     )
     context.user_data["awaiting_ch4_data"] = True
 
@@ -543,7 +540,9 @@ async def handle_ch4_gen_questionnaire(
         )
     except Exception as e:
         print(f"[chapters] Questionnaire error: {e}")
-        await query.message.reply_text(get_error_message("generating the questionnaire"))
+        await query.message.reply_text(
+            get_error_message("generating the questionnaire")
+        )
 
 
 async def handle_ch4_gen_template(
@@ -585,22 +584,21 @@ async def handle_ch4_explain_survey(
     explanation = (
         "📖 *How to Administer Your Survey*\n\n"
         "*Step 1 — Print or share digitally*\n"
-        "Print copies or create a Google Form. Google Forms is free and easy to share via WhatsApp.\n\n"
+        "Print copies or create a Google Form via WhatsApp.\n\n"
         "*Step 2 — Reach your sample*\n"
-        "Go to your study location and distribute to your target respondents.\n\n"
+        "Distribute to your target respondents at your study location.\n\n"
         "*Step 3 — Collect responses*\n"
         "Collect immediately if paper-based, or set a 3–5 day deadline for Google Forms.\n\n"
         "*Step 4 — Count your responses*\n"
-        "For each question, count how many chose each option. "
-        "Enter the counts into the data template.\n\n"
+        "Count how many chose each option per question and enter into the data template.\n\n"
         "*Step 5 — Come back with your data*\n"
-        "Return here and I'll analyse everything and write Chapter 4.\n\n"
+        "Return here and I will analyse everything and write Chapter 4.\n\n"
         "How many respondents are you targeting?"
     )
     await query.edit_message_text(explanation, parse_mode="Markdown")
 
 
-# ─── PDF DOWNLOAD ─────────────────────────────────────────────────────────────
+# ─── DOCUMENT DOWNLOAD ────────────────────────────────────────────────────────
 
 async def handle_download_pdf(
     update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -651,6 +649,7 @@ async def handle_download_pdf(
         await query.message.reply_text(
             "Document generation failed. Your chapters are saved — try again in a moment."
         )
+
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -726,7 +725,7 @@ def _extract_and_save_chapter_1_data(user_id: int, content: str) -> None:
         })
         print(
             f"[chapters] Ch1 data saved: "
-            f"{len(objectives)} objectives, "
+            f"{len(objectives)} obj, "
             f"{len(questions)} questions, "
             f"{len(hypotheses)} hypotheses"
         )
@@ -746,6 +745,7 @@ def _strip_extracted_data_block(content: str) -> str:
 def register_chapter_handlers(application) -> None:
     print("[chapters] Registering chapter handlers...")
 
+    # Callback handlers — registered at default group 0
     application.add_handler(
         CallbackQueryHandler(handle_generate_chapter, pattern=r"^gen_chapter_\d+$")
     )
@@ -771,8 +771,8 @@ def register_chapter_handlers(application) -> None:
         CallbackQueryHandler(handle_download_pdf, pattern="^download_pdf$")
     )
 
-    # Text input handlers at group 1
-    # Each checks its own condition and exits early if not applicable
+    # Text/voice handlers at group 1
+    # Each checks its own condition and returns early if not applicable
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_outline_input),
         group=1,
