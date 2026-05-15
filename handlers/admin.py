@@ -96,7 +96,8 @@ async def handle_broadcast(
                 parse_mode="Markdown",
             )
             sent += 1
-        except Exception:
+        except Exception as e:
+            print(f"[admin] Broadcast failed for uid={uid}: {e}")
             failed += 1
 
     await update.message.reply_text(
@@ -139,6 +140,7 @@ async def handle_myid(
 ) -> None:
     """Let anyone check their Telegram ID — needed to set up admin."""
     user_id = update.effective_user.id
+    print(f"[admin] /myid: user={user_id}")
     await update.message.reply_text(
         f"Your Telegram ID: `{user_id}`\n\n"
         "Share this with the bot operator to get admin access.",

@@ -79,6 +79,7 @@ def turnitin_keyboard() -> InlineKeyboardMarkup:
 
 
 def skip_keyboard(callback_data: str = "skip") -> InlineKeyboardMarkup:
+    print(f"[keyboards] skip_keyboard callback={callback_data}")
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("Skip ➡️", callback_data=callback_data)
     ]])
@@ -185,6 +186,7 @@ def payment_plans_keyboard() -> InlineKeyboardMarkup:
 
 def payment_link_keyboard(url: str = "") -> InlineKeyboardMarkup:
     """Legacy — kept for compatibility. Now just shows subscribe button."""
+    print("[keyboards] payment_link_keyboard (legacy)")
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("💳 Subscribe", callback_data="show_plans")
     ]])
@@ -214,6 +216,7 @@ def resume_keyboard(chapters_done: int) -> InlineKeyboardMarkup:
 
 
 def restart_keyboard() -> InlineKeyboardMarkup:
+    print("[keyboards] restart_keyboard")
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("🆕 Start a new project", callback_data="restart")
     ]])

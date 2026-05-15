@@ -138,13 +138,22 @@ async def _process_correction_input(
         "🔍 Analysing your correction request..."
     )
 
-    understanding = await run_correction_agent(
-        mode="understand",
-        chapter_number=chapter_number,
-        chapter_content=current_content,
-        correction_request=correction_request,
-        correction_history=history,
-    )
+    print(f"[corrections] Calling run_correction_agent mode=understand ch={chapter_number}")
+    try:
+        understanding = await run_correction_agent(
+            mode="understand",
+            chapter_number=chapter_number,
+            chapter_content=current_content,
+            correction_request=correction_request,
+            correction_history=history,
+        )
+    except Exception as e:
+        print(f"[corrections] run_correction_agent understand ERROR: {e}")
+        await status_msg.edit_text(
+            "Something went wrong analysing your request. Please try again."
+        )
+        return CORRECTION_AWAITING_INPUT
+    print(f"[corrections] Understanding result: {str(understanding)[:100]}")
 
     await status_msg.delete()
 
@@ -196,15 +205,24 @@ async def handle_correction_confirm(
             f"✍️ Applying corrections to Chapter {chapter_number}... ⏳"
         )
 
-        corrected_content = await run_correction_agent(
-            mode="correct",
-            chapter_number=chapter_number,
-            chapter_content=current_content,
-            correction_request=correction_request,
-            correction_history=history,
-        )
+        print(f"[corrections] Calling run_correction_agent mode=correct ch={chapter_number} round={round_num}")
+        try:
+            corrected_content = await run_correction_agent(
+                mode="correct",
+                chapter_number=chapter_number,
+                chapter_content=current_content,
+                correction_request=correction_request,
+                correction_history=history,
+            )
+        except Exception as e:
+            print(f"[corrections] run_correction_agent correct ERROR: {e}")
+            await query.message.reply_text(
+                "Something went wrong during editing. Your original chapter is unchanged. Please try again."
+            )
+            return ConversationHandler.END
 
         if not corrected_content:
+            print(f"[corrections] run_correction_agent returned empty for ch={chapter_number}")
             await query.message.reply_text(
                 "Something went wrong. Your original chapter is unchanged. Please try again."
             )
@@ -296,20 +314,30 @@ async def handle_post_correction(
         await query.message.reply_text("Generating updated PDF... ⏳")
         project = get_active_project(user_id)
         if project:
-            from services.pdf_service import generate_project_pdf
-            from services.supabase_service import get_user
-            user_record = get_user(user_id)
-            if user_record:
-                project["university"]     = project.get("university")     or user_record.get("university", "")
-                project["department"]     = project.get("department")     or user_record.get("department", "")
-                project["academic_level"] = project.get("academic_level") or user_record.get("academic_level", "bsc")
-            pdf_buffer = generate_project_pdf(project, user_record)
-            await context.bot.send_document(
-                chat_id=query.message.chat_id,
-                document=pdf_buffer,
-                filename=f"FYP_Revised_{project['topic'][:25].replace(' ','_')}.pdf",
-                caption="📄 Your revised project PDF.",
-            )
+            try:
+                from services.pdf_service import generate_project_pdf
+                from services.supabase_service import get_user
+                user_record = get_user(user_id)
+                if user_record:
+                    project["university"]     = project.get("university")     or user_record.get("university", "")
+                    project["department"]     = project.get("department")     or user_record.get("department", "")
+                    project["academic_level"] = project.get("academic_level") or user_record.get("academic_level", "bsc")
+                print(f"[corrections] Generating revised PDF for user={user_id}")
+                pdf_buffer = generate_project_pdf(project, user_record)
+                await context.bot.send_document(
+                    chat_id=query.message.chat_id,
+                    document=pdf_buffer,
+                    filename=f"FYP_Revised_{project['topic'][:25].replace(' ','_')}.pdf",
+                    caption="📄 Your revised project PDF.",
+                )
+                print(f"[corrections] Revised PDF sent to user={user_id}")
+            except Exception as e:
+                print(f"[corrections] correction_download ERROR user={user_id}: {e}")
+                await query.message.reply_text(
+                    "PDF generation failed. Your chapter changes are saved — try downloading again."
+                )
+        else:
+            print(f"[corrections] correction_download: no project found for user={user_id}")
         return ConversationHandler.END
 
     if action == "correction_done":

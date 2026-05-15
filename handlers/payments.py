@@ -20,6 +20,7 @@ from config import PLANS
 def _calculate_expiry(plan_key: str) -> str:
     days   = PLANS.get(plan_key, {}).get("days", 7)
     expiry = datetime.now(timezone.utc) + timedelta(days=days)
+    print(f"[payments] _calculate_expiry: plan={plan_key} days={days} expires={expiry.isoformat()}")
     return expiry.isoformat()
 
 
@@ -202,6 +203,7 @@ async def handle_my_subscription(
     plan    = user.get("subscription_plan", "")
     expires = user.get("subscription_expires_at", "")
 
+    print(f"[payments] /subscription: status={status} plan={plan} expires={expires}")
     if status == "active" and expires:
         try:
             exp_dt  = datetime.fromisoformat(expires.replace("Z", "+00:00"))
@@ -209,6 +211,7 @@ async def handle_my_subscription(
             if exp_dt > now:
                 days_left = (exp_dt - now).days
                 plan_name = PLANS.get(plan, {}).get("name", plan)
+                print(f"[payments] Active subscription: plan={plan_name} days_left={days_left}")
                 await update.message.reply_text(
                     f"✅ *Subscription active*\n\n"
                     f"Plan: *{plan_name}*\n"
