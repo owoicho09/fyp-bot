@@ -50,15 +50,15 @@ MODEL_DEFAULT   = "claude-haiku-4-5-20251001"
 PLANS = {
     "weekly": {
         "name":        "Weekly Pass",
-        "stars":       60,           # 60 Stars ≈ ₦3,000
+        "stars":       100,          # 100 Stars ≈ ₦3,000
         "naira":       "₦3,000",
         "label":       "₦3,000/week — Chapters 3, 4 & 5 + all tools",
-        "description": "7-day access to all chapters, voice notes, corrections and PDF download",
+        "description": "7-day access to all chapters, voice notes, corrections and document download",
         "days":        7,
     },
     "project": {
         "name":        "Project Pass",
-        "stars":       200,          # 200 Stars ≈ ₦10,000
+        "stars":       334,          # 334 Stars ≈ ₦10,000
         "naira":       "₦10,000",
         "label":       "₦10,000 one-time — All chapters + 90 days (best value ⭐)",
         "description": "90-day access to all chapters, unlimited corrections and document download",
@@ -66,14 +66,13 @@ PLANS = {
     },
     "postgrad": {
         "name":        "Postgrad Pass",
-        "stars":       200,          # 200 Stars ≈ ₦10,000
+        "stars":       334,          # 334 Stars ≈ ₦10,000
         "naira":       "₦10,000",
         "label":       "₦10,000/month — MSc/MBA/PhD format + extended support",
-        "description": "30-day postgraduate access with MSc/MBA format, contributions to knowledge section",
+        "description": "30-day postgraduate access with MSc/MBA format and contributions to knowledge",
         "days":        30,
     },
 }
-
 print(
     f"[config.py] Configuration loaded.\n"
     f"  Environment : {APP_ENV}\n"
